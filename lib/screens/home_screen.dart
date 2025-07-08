@@ -228,56 +228,66 @@ class _HomeScreenState extends State<HomeScreen>
                   itemCount: historyItems.length,
                   itemBuilder: (context, index) {
                     final item = historyItems[index];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 16.0),
-                      padding: const EdgeInsets.all(16.0),
-                      decoration: BoxDecoration(
-                        color: white,
-                        borderRadius: BorderRadius.circular(16.0),
-                        border: Border.all(color: secondary, width: 2.0),
-                        boxShadow: [
-                          BoxShadow(
-                            color: grey.withOpacity(0.3),
-                            blurRadius: 8.0,
-                            offset: const Offset(0, 2),
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const PracticeScreen(),
                           ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            child: Icon(
-                              item['correct']
-                                  ? Icons.check_circle
-                                  : Icons.cancel,
-                              color:
-                                  item['correct'] ? Colors.green : Colors.red,
-                              size: 30.0,
+                        );
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 16.0),
+                        padding: const EdgeInsets.all(16.0),
+                        decoration: BoxDecoration(
+                          color: white,
+                          borderRadius: BorderRadius.circular(16.0),
+                          border: Border.all(color: secondary, width: 2.0),
+                          boxShadow: [
+                            BoxShadow(
+                              color: grey.withOpacity(0.3),
+                              blurRadius: 8.0,
+                              offset: const Offset(0, 2),
                             ),
-                          ),
-                          const SizedBox(width: 12.0),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                TextWidget(
-                                  text: item['content'],
-                                  fontSize: 20.0,
-                                  color: black,
-                                  isBold: true,
-                                  fontFamily: 'Regular',
-                                ),
-                                TextWidget(
-                                  text: 'Practiced on: ${item['date']}',
-                                  fontSize: 16.0,
-                                  color: grey,
-                                  fontFamily: 'Regular',
-                                ),
-                              ],
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              child: Icon(
+                                item['correct']
+                                    ? Icons.check_circle
+                                    : Icons.cancel,
+                                color:
+                                    item['correct'] ? Colors.green : Colors.red,
+                                size: 30.0,
+                              ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 12.0),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  TextWidget(
+                                    text: item['content'],
+                                    fontSize: 20.0,
+                                    color: black,
+                                    isBold: true,
+                                    fontFamily: 'Regular',
+                                  ),
+                                  TextWidget(
+                                    text: 'Practiced on: ${item['date']}',
+                                    fontSize: 16.0,
+                                    color: grey,
+                                    fontFamily: 'Regular',
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },
