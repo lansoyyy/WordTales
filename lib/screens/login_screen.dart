@@ -14,6 +14,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _studentNameController = TextEditingController();
   bool _obscurePassword = true;
   bool _showTeacherLogin = false;
 
@@ -50,9 +51,39 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 48.0),
               // Teacher login fields (shown only when Continue as Teacher is clicked)
+              if (!_showTeacherLogin) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 20),
+                  child: TextField(
+                    onChanged: (value) {
+                      setState(() {});
+                    },
+                    controller: _studentNameController,
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: white,
+                      hintText: 'Student Name',
+                      hintStyle: TextStyle(color: grey, fontFamily: 'Regular'),
+                      prefixIcon: Icon(Icons.person, color: primary),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.0),
+                        borderSide: BorderSide(color: grey),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.0),
+                        borderSide: BorderSide(color: primary, width: 2.0),
+                      ),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                ),
+              ],
               if (_showTeacherLogin) ...[
                 TextField(
                   controller: _emailController,
+                  onChanged: (value) {
+                    setState(() {});
+                  },
                   decoration: InputDecoration(
                     filled: true,
                     fillColor: white,
@@ -72,6 +103,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 16.0),
                 TextField(
+                  onChanged: (value) {
+                    setState(() {});
+                  },
                   controller: _passwordController,
                   obscureText: _obscurePassword,
                   decoration: InputDecoration(
@@ -106,45 +140,71 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 16.0),
               ],
               // Continue button for kids
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => const HomeScreen()),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: secondary,
-                  foregroundColor: black,
-                  minimumSize: const Size(double.infinity, 60.0),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12.0),
+              Visibility(
+                visible: !_showTeacherLogin,
+                child: ElevatedButton(
+                  onPressed: _studentNameController.text == ''
+                      ? null
+                      : () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) => const HomeScreen()),
+                          );
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: secondary,
+                    foregroundColor: black,
+                    minimumSize: const Size(double.infinity, 60.0),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12.0),
+                    ),
                   ),
-                ),
-                child: TextWidget(
-                  text: 'Continue',
-                  fontSize: 20.0,
-                  color: black,
-                  isBold: true,
+                  child: TextWidget(
+                    text: 'Continue',
+                    fontSize: 20.0,
+                    color: black,
+                    isBold: true,
+                  ),
                 ),
               ),
               const SizedBox(height: 16.0),
               // Continue as Teacher button
               ElevatedButton(
-                onPressed: () {
-                  if (_showTeacherLogin) {
-                    // Handle teacher login logic here
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) => const TeacherHomeScreen()),
-                    );
-                  } else {
-                    setState(() {
-                      _showTeacherLogin = true;
-                    });
-                  }
-                },
+                onPressed: _showTeacherLogin
+                    ? _emailController.text == '' ||
+                            _passwordController.text == ''
+                        ? null
+                        : () {
+                            if (_showTeacherLogin) {
+                              // Handle teacher login logic here
+                              Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) =>
+                                        const TeacherHomeScreen()),
+                              );
+                            } else {
+                              setState(() {
+                                _showTeacherLogin = true;
+                              });
+                            }
+                          }
+                    : () {
+                        if (_showTeacherLogin) {
+                          // Handle teacher login logic here
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                                builder: (context) =>
+                                    const TeacherHomeScreen()),
+                          );
+                        } else {
+                          setState(() {
+                            _showTeacherLogin = true;
+                          });
+                        }
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primary,
                   foregroundColor: white,
