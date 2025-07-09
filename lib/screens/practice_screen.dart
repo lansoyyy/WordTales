@@ -3,7 +3,9 @@ import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
 
 class PracticeScreen extends StatefulWidget {
-  const PracticeScreen({super.key});
+  bool? isTeacher;
+
+  PracticeScreen({this.isTeacher = false});
 
   @override
   State<PracticeScreen> createState() => _PracticeScreenState();
@@ -88,6 +90,18 @@ class _PracticeScreenState extends State<PracticeScreen>
                 ),
               ),
             ),
+            Visibility(
+              visible: widget.isTeacher!,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: TextWidget(
+                  text: 'Emma Watson',
+                  fontSize: 24.0,
+                  color: primary,
+                  isBold: true,
+                ),
+              ),
+            ),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(
@@ -156,43 +170,52 @@ class _PracticeScreenState extends State<PracticeScreen>
                         borderRadius: BorderRadius.circular(16.0),
                         border: Border.all(color: grey.withOpacity(0.5)),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.mic, color: primary, size: 30.0),
-                          const SizedBox(width: 8.0),
-                          TextWidget(
-                            text: 'Say it loud!',
-                            fontSize: 20.0,
-                            color: black,
-                            isBold: true,
-                          ),
-                        ],
-                      ),
+                      child: widget.isTeacher!
+                          ? TextWidget(
+                              text: 'Result:',
+                              fontSize: 18,
+                              fontFamily: 'Bold',
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.mic, color: primary, size: 30.0),
+                                const SizedBox(width: 8.0),
+                                TextWidget(
+                                  text: 'Say it loud!',
+                                  fontSize: 20.0,
+                                  color: black,
+                                  isBold: true,
+                                ),
+                              ],
+                            ),
                     ),
                     const SizedBox(height: 48.0),
                     // Practice Button with Animation
-                    ScaleTransition(
-                      scale: _scaleAnimation,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          // Placeholder for speech-to-text action
-                        },
-                        icon: Icon(Icons.mic, color: white, size: 28.0),
-                        label: TextWidget(
-                          text: 'Practice',
-                          fontSize: 24.0,
-                          color: white,
-                          isBold: true,
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primary,
-                          foregroundColor: white,
-                          minimumSize: const Size(double.infinity, 70.0),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16.0),
+                    Visibility(
+                      visible: !widget.isTeacher!,
+                      child: ScaleTransition(
+                        scale: _scaleAnimation,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            // Placeholder for speech-to-text action
+                          },
+                          icon: Icon(Icons.mic, color: white, size: 28.0),
+                          label: TextWidget(
+                            text: 'Practice',
+                            fontSize: 24.0,
+                            color: white,
+                            isBold: true,
                           ),
-                          elevation: 8.0,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: primary,
+                            foregroundColor: white,
+                            minimumSize: const Size(double.infinity, 70.0),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16.0),
+                            ),
+                            elevation: 8.0,
+                          ),
                         ),
                       ),
                     ),

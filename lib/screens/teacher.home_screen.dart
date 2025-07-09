@@ -238,13 +238,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                       const Spacer(),
                       IconButton(
                         icon: Icon(Icons.book, color: white, size: 28.0),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) => const PracticeScreen()),
-                          );
-                        },
+                        onPressed: () {},
                         tooltip: 'Test Practice',
                       ),
                     ],
@@ -543,57 +537,68 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                             itemCount: student['history'].length,
                             itemBuilder: (context, historyIndex) {
                               final item = student['history'][historyIndex];
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 12.0),
-                                padding: const EdgeInsets.all(16.0),
-                                decoration: BoxDecoration(
-                                  color: white,
-                                  borderRadius: BorderRadius.circular(16.0),
-                                  border:
-                                      Border.all(color: secondary, width: 2.0),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: grey.withOpacity(0.3),
-                                      blurRadius: 8.0,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      item['correct']
-                                          ? Icons.check_circle
-                                          : Icons.cancel,
-                                      color: item['correct']
-                                          ? Colors.green
-                                          : Colors.red,
-                                      size: 28.0,
-                                    ),
-                                    const SizedBox(width: 12.0),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          TextWidget(
-                                            text: item['content'],
-                                            fontSize: 22.0,
-                                            color: black,
-                                            isBold: true,
-                                            fontFamily: 'Regular',
-                                          ),
-                                          TextWidget(
-                                            text:
-                                                'Practiced on: ${item['date']}',
-                                            fontSize: 14.0,
-                                            color: grey,
-                                            fontFamily: 'Regular',
-                                          ),
-                                        ],
+                              return GestureDetector(
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (context) => PracticeScreen(
+                                              isTeacher: true,
+                                            )),
+                                  );
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(bottom: 12.0),
+                                  padding: const EdgeInsets.all(16.0),
+                                  decoration: BoxDecoration(
+                                    color: white,
+                                    borderRadius: BorderRadius.circular(16.0),
+                                    border: Border.all(
+                                        color: secondary, width: 2.0),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: grey.withOpacity(0.3),
+                                        blurRadius: 8.0,
+                                        offset: const Offset(0, 2),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        item['correct']
+                                            ? Icons.check_circle
+                                            : Icons.cancel,
+                                        color: item['correct']
+                                            ? Colors.green
+                                            : Colors.red,
+                                        size: 28.0,
+                                      ),
+                                      const SizedBox(width: 12.0),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            TextWidget(
+                                              text: item['content'],
+                                              fontSize: 22.0,
+                                              color: black,
+                                              isBold: true,
+                                              fontFamily: 'Regular',
+                                            ),
+                                            TextWidget(
+                                              text:
+                                                  'Practiced on: ${item['date']}',
+                                              fontSize: 14.0,
+                                              color: grey,
+                                              fontFamily: 'Regular',
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               );
                             },
