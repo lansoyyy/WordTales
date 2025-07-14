@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:word_tales/screens/home_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
 
@@ -256,6 +257,8 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   void _showLevelCompletedDialog() {
     _celebrationController.forward();
+    final bool isLastLevel = widget.level == 5;
+    
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -271,11 +274,17 @@ class _PracticeScreenState extends State<PracticeScreen>
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Colors.orange.shade100,
-                  Colors.yellow.shade100,
-                  Colors.pink.shade100,
-                ],
+                colors: isLastLevel
+                    ? [
+                        Colors.purple.shade100,
+                        Colors.pink.shade100,
+                        Colors.orange.shade100,
+                      ]
+                    : [
+                        Colors.orange.shade100,
+                        Colors.yellow.shade100,
+                        Colors.pink.shade100,
+                      ],
               ),
             ),
             child: Column(
@@ -291,19 +300,21 @@ class _PracticeScreenState extends State<PracticeScreen>
                         padding: const EdgeInsets.all(20.0),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            colors: [Colors.orange, Colors.yellow],
+                            colors: isLastLevel
+                                ? [Colors.purple, Colors.pink]
+                                : [Colors.orange, Colors.yellow],
                           ),
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.orange.withOpacity(0.5),
+                              color: (isLastLevel ? Colors.purple : Colors.orange).withOpacity(0.5),
                               blurRadius: 20.0,
                               spreadRadius: 5.0,
                             ),
                           ],
                         ),
                         child: Icon(
-                          Icons.celebration,
+                          isLastLevel ? Icons.emoji_events : Icons.celebration,
                           color: white,
                           size: 50.0,
                         ),
@@ -315,7 +326,7 @@ class _PracticeScreenState extends State<PracticeScreen>
 
                 // Congratulations text with emoji
                 TextWidget(
-                  text: '🎉 Congratulations! 🎉',
+                  text: isLastLevel ? '🏆 AMAZING! 🏆' : '🎉 Congratulations! 🎉',
                   fontSize: 32.0,
                   color: primary,
                   isBold: true,
@@ -323,7 +334,9 @@ class _PracticeScreenState extends State<PracticeScreen>
                 ),
                 const SizedBox(height: 12.0),
                 TextWidget(
-                  text: 'You completed ${widget.levelTitle}! 🌟',
+                  text: isLastLevel 
+                      ? 'You completed ALL levels! You are a reading champion! 🌟'
+                      : 'You completed ${widget.levelTitle}! 🌟',
                   fontSize: 22.0,
                   color: black,
                   align: TextAlign.center,
@@ -386,42 +399,81 @@ class _PracticeScreenState extends State<PracticeScreen>
                 ),
                 const SizedBox(height: 32.0),
 
-                // Next level unlocked message with animation
-                AnimatedBuilder(
-                  animation: _pulseAnimation,
-                  builder: (context, child) {
-                    return Transform.scale(
-                      scale: _pulseAnimation.value,
-                      child: Container(
-                        padding: const EdgeInsets.all(20.0),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.green.withOpacity(0.2),
-                              Colors.green.withOpacity(0.4),
+                // Special message for last level or next level unlocked
+                if (!isLastLevel) ...[
+                  AnimatedBuilder(
+                    animation: _pulseAnimation,
+                    builder: (context, child) {
+                      return Transform.scale(
+                        scale: _pulseAnimation.value,
+                        child: Container(
+                          padding: const EdgeInsets.all(20.0),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.green.withOpacity(0.2),
+                                Colors.green.withOpacity(0.4),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(16.0),
+                            border: Border.all(color: Colors.green, width: 3.0),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.lock_open,
+                                  color: Colors.green, size: 28.0),
+                              const SizedBox(width: 12.0),
+                              TextWidget(
+                                text: 'Next level unlocked! 🔓',
+                                fontSize: 18.0,
+                                color: Colors.green,
+                                isBold: true,
+                              ),
                             ],
                           ),
-                          borderRadius: BorderRadius.circular(16.0),
-                          border: Border.all(color: Colors.green, width: 3.0),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.lock_open,
-                                color: Colors.green, size: 28.0),
-                            const SizedBox(width: 12.0),
-                            TextWidget(
-                              text: 'Next level unlocked! 🔓',
-                              fontSize: 18.0,
-                              color: Colors.green,
-                              isBold: true,
+                      );
+                    },
+                  ),
+                ] else ...[
+                  // Special celebration for completing all levels
+                  AnimatedBuilder(
+                    animation: _pulseAnimation,
+                    builder: (context, child) {
+                      return Transform.scale(
+                        scale: _pulseAnimation.value,
+                        child: Container(
+                          padding: const EdgeInsets.all(20.0),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.purple.withOpacity(0.2),
+                                Colors.pink.withOpacity(0.4),
+                              ],
                             ),
-                          ],
+                            borderRadius: BorderRadius.circular(16.0),
+                            border: Border.all(color: Colors.purple, width: 3.0),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.emoji_events,
+                                  color: Colors.purple, size: 28.0),
+                              const SizedBox(width: 12.0),
+                              TextWidget(
+                                text: 'Reading Champion! 🏆',
+                                fontSize: 18.0,
+                                color: Colors.purple,
+                                isBold: true,
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                      );
+                    },
+                  ),
+                ],
                 const SizedBox(height: 32.0),
 
                 // Continue button with gradient
@@ -429,15 +481,25 @@ class _PracticeScreenState extends State<PracticeScreen>
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop(); // Go back to home screen
+                      Navigator.of(context).pop(); // Close dialog
+                      
+                      if (isLastLevel) {
+                        // Navigate to home screen for last level
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (context) => const HomeScreen()),
+                          (route) => false,
+                        );
+                      } else {
+                        // Go back to home screen for other levels
+                        Navigator.of(context).pop();
+                      }
+                      
                       // Call the callback to unlock next level with score
-                      widget.onLevelCompletedWithScore
-                          ?.call(_score, _totalItems);
+                      widget.onLevelCompletedWithScore?.call(_score, _totalItems);
                       widget.onLevelCompleted?.call();
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: primary,
+                      backgroundColor: isLastLevel ? Colors.purple : primary,
                       foregroundColor: white,
                       padding: const EdgeInsets.symmetric(vertical: 20.0),
                       shape: RoundedRectangleBorder(
@@ -446,7 +508,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                       elevation: 8.0,
                     ),
                     child: TextWidget(
-                      text: 'Continue Adventure! 🚀',
+                      text: isLastLevel ? 'Go to Home! 🏠' : 'Continue Adventure! 🚀',
                       fontSize: 20.0,
                       color: white,
                       isBold: true,

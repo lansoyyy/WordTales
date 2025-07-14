@@ -282,7 +282,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ),
                           const SizedBox(width: 8.0),
                           TextWidget(
-                            text: 'Choose Your Adventure!',
+                            text: 'Continue Your Adventure!',
                             fontSize: 24.0,
                             color: black,
                             isBold: true,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:word_tales/screens/home_screen.dart';
 import 'package:word_tales/screens/teacher.home_screen.dart';
+import 'package:word_tales/screens/reminder_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
 
@@ -153,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             Navigator.pushReplacement(
                               context,
                               MaterialPageRoute(
-                                  builder: (context) => const HomeScreen()),
+                                  builder: (context) => const ReminderScreen()),
                             );
                           },
                 style: ElevatedButton.styleFrom(
