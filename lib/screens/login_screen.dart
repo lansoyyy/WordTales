@@ -140,32 +140,35 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 16.0),
               ],
               // Continue button for kids
-              Visibility(
-                visible: !_showTeacherLogin,
-                child: ElevatedButton(
-                  onPressed: _studentNameController.text == ''
-                      ? null
-                      : () {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) => const HomeScreen()),
-                          );
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: secondary,
-                    foregroundColor: black,
-                    minimumSize: const Size(double.infinity, 60.0),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12.0),
-                    ),
+              ElevatedButton(
+                onPressed: _showTeacherLogin
+                    ? () {
+                        setState(() {
+                          _showTeacherLogin = false;
+                        });
+                      }
+                    : _studentNameController.text == ''
+                        ? null
+                        : () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) => const HomeScreen()),
+                            );
+                          },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: secondary,
+                  foregroundColor: black,
+                  minimumSize: const Size(double.infinity, 60.0),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12.0),
                   ),
-                  child: TextWidget(
-                    text: 'Continue',
-                    fontSize: 20.0,
-                    color: black,
-                    isBold: true,
-                  ),
+                ),
+                child: TextWidget(
+                  text: _showTeacherLogin ? 'Student Login' : 'Continue',
+                  fontSize: 20.0,
+                  color: black,
+                  isBold: true,
                 ),
               ),
               const SizedBox(height: 16.0),
