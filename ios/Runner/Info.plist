@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- Speech & Microphone permissions for speech_to_text -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs microphone access to practice speaking words and sentences.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>This app uses speech recognition to check your pronunciation during practice.</string>
 </dict>
 </plist>

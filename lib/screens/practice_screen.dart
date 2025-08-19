@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:word_tales/screens/home_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_recognition_result.dart';
 
 class PracticeScreen extends StatefulWidget {
   bool? isTeacher;
@@ -41,6 +43,14 @@ class _PracticeScreenState extends State<PracticeScreen>
   Set<int> _completedItems = {};
   int _score = 0;
   int _totalItems = 0;
+
+  // Speech to Text state
+  late stt.SpeechToText _speech;
+  bool _speechAvailable = false;
+  bool _isListening = false;
+  String _recognizedText = '';
+  double _confidence = 0.0;
+  double _soundLevel = 0.0;
 
   @override
   void initState() {
@@ -83,6 +93,8 @@ class _PracticeScreenState extends State<PracticeScreen>
     _celebrationAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _celebrationController, curve: Curves.bounceOut),
     );
+
+    _initSpeech();
   }
 
   void _initializePracticeItems() {
@@ -227,12 +239,130 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
   }
 
+  Future<void> _initSpeech() async {
+    _speech = stt.SpeechToText();
+    final available = await _speech.initialize(
+      onStatus: _onSpeechStatus,
+      onError: (error) {
+        debugPrint('Speech error: $error');
+      },
+    );
+    if (mounted) {
+      setState(() {
+        _speechAvailable = available;
+      });
+    }
+  }
+
+  void _onSpeechStatus(String status) {
+    if (!mounted) return;
+    setState(() {
+      if (status == 'notListening') {
+        _isListening = false;
+      }
+    });
+  }
+
+  Future<void> _startListening() async {
+    if (!_speechAvailable) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Speech not available. Check microphone permission.'),
+          ),
+        );
+      }
+      return;
+    }
+    setState(() {
+      _recognizedText = '';
+      _confidence = 0.0;
+      _isListening = true;
+      _soundLevel = 0.0;
+    });
+    await _speech.listen(
+      onResult: _onSpeechResult,
+      partialResults: true,
+      listenMode: stt.ListenMode.dictation,
+      onSoundLevelChange: (level) {
+        if (!mounted) return;
+        setState(() {
+          _soundLevel = level;
+        });
+      },
+    );
+  }
+
+  Future<void> _stopListening() async {
+    await _speech.stop();
+    if (mounted) {
+      setState(() {
+        _isListening = false;
+        _soundLevel = 0.0;
+      });
+    }
+  }
+
+  void _toggleListening() {
+    if (_isListening) {
+      _stopListening();
+    } else {
+      _startListening();
+    }
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    if (!mounted) return;
+    setState(() {
+      _recognizedText = result.recognizedWords;
+      _confidence = result.confidence;
+    });
+
+    final target = practiceItems[_currentIndex]['content']!;
+    if (_matchesTarget(target, _recognizedText)) {
+      _stopListening();
+      if (!_completedItems.contains(_currentIndex)) {
+        _markCurrentItemAsCompleted();
+      }
+    }
+  }
+
+  String _normalizeText(String s) {
+    return s
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9 ]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  double _wordMatchRatio(String t, String h) {
+    final tWords = t.split(' ').where((w) => w.isNotEmpty).toList();
+    if (tWords.isEmpty) return 0.0;
+    final matches = tWords.where((w) => h.contains(w)).length;
+    return matches / tWords.length;
+  }
+
+  bool _matchesTarget(String target, String hyp) {
+    final t = _normalizeText(target);
+    final h = _normalizeText(hyp);
+    if (t.isEmpty || h.isEmpty) return false;
+    final type = practiceItems[_currentIndex]['type'];
+    if (type == 'Word') {
+      return t == h || h.split(' ').contains(t);
+    } else {
+      return h.contains(t) || _wordMatchRatio(t, h) >= 0.8;
+    }
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
     _bounceController.dispose();
     _pulseController.dispose();
     _celebrationController.dispose();
+    if (_isListening) {
+      _speech.stop();
+    }
     super.dispose();
   }
 
@@ -240,6 +370,9 @@ class _PracticeScreenState extends State<PracticeScreen>
     setState(() {
       _currentIndex = (_currentIndex + 1) % practiceItems.length;
     });
+    if (_isListening) {
+      _stopListening();
+    }
   }
 
   void _markCurrentItemAsCompleted() {
@@ -258,7 +391,7 @@ class _PracticeScreenState extends State<PracticeScreen>
   void _showLevelCompletedDialog() {
     _celebrationController.forward();
     final bool isLastLevel = widget.level == 5;
-    
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -307,7 +440,9 @@ class _PracticeScreenState extends State<PracticeScreen>
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: (isLastLevel ? Colors.purple : Colors.orange).withOpacity(0.5),
+                              color:
+                                  (isLastLevel ? Colors.purple : Colors.orange)
+                                      .withOpacity(0.5),
                               blurRadius: 20.0,
                               spreadRadius: 5.0,
                             ),
@@ -326,7 +461,8 @@ class _PracticeScreenState extends State<PracticeScreen>
 
                 // Congratulations text with emoji
                 TextWidget(
-                  text: isLastLevel ? '🏆 AMAZING! 🏆' : '🎉 Congratulations! 🎉',
+                  text:
+                      isLastLevel ? '🏆 AMAZING! 🏆' : '🎉 Congratulations! 🎉',
                   fontSize: 32.0,
                   color: primary,
                   isBold: true,
@@ -334,7 +470,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                 ),
                 const SizedBox(height: 12.0),
                 TextWidget(
-                  text: isLastLevel 
+                  text: isLastLevel
                       ? 'You completed ALL levels! You are a reading champion! 🌟'
                       : 'You completed ${widget.levelTitle}! 🌟',
                   fontSize: 22.0,
@@ -453,7 +589,8 @@ class _PracticeScreenState extends State<PracticeScreen>
                               ],
                             ),
                             borderRadius: BorderRadius.circular(16.0),
-                            border: Border.all(color: Colors.purple, width: 3.0),
+                            border:
+                                Border.all(color: Colors.purple, width: 3.0),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -482,20 +619,22 @@ class _PracticeScreenState extends State<PracticeScreen>
                   child: ElevatedButton(
                     onPressed: () {
                       Navigator.of(context).pop(); // Close dialog
-                      
+
                       if (isLastLevel) {
                         // Navigate to home screen for last level
                         Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute(builder: (context) => const HomeScreen()),
+                          MaterialPageRoute(
+                              builder: (context) => const HomeScreen()),
                           (route) => false,
                         );
                       } else {
                         // Go back to home screen for other levels
                         Navigator.of(context).pop();
                       }
-                      
+
                       // Call the callback to unlock next level with score
-                      widget.onLevelCompletedWithScore?.call(_score, _totalItems);
+                      widget.onLevelCompletedWithScore
+                          ?.call(_score, _totalItems);
                       widget.onLevelCompleted?.call();
                     },
                     style: ElevatedButton.styleFrom(
@@ -508,7 +647,9 @@ class _PracticeScreenState extends State<PracticeScreen>
                       elevation: 8.0,
                     ),
                     child: TextWidget(
-                      text: isLastLevel ? 'Go to Home! 🏠' : 'Continue Adventure! 🚀',
+                      text: isLastLevel
+                          ? 'Go to Home! 🏠'
+                          : 'Continue Adventure! 🚀',
                       fontSize: 20.0,
                       color: white,
                       isBold: true,
@@ -612,6 +753,29 @@ class _PracticeScreenState extends State<PracticeScreen>
                                 ),
                             ],
                           ),
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12.0),
+                        ),
+                        child: IconButton(
+                          tooltip: _isListening
+                              ? 'Stop listening'
+                              : 'Start speaking',
+                          icon: Transform.scale(
+                            scale: _isListening
+                                ? (1.0 + (_soundLevel.clamp(0, 60) / 120))
+                                : 1.0,
+                            child: Icon(
+                              _isListening ? Icons.hearing : Icons.mic,
+                              color: white,
+                              size: 30.0,
+                            ),
+                          ),
+                          onPressed: _speechAvailable ? _toggleListening : null,
                         ),
                       ),
                     ],
@@ -883,26 +1047,61 @@ class _PracticeScreenState extends State<PracticeScreen>
                                 fontSize: 18,
                                 fontFamily: 'Bold',
                               )
-                            : Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
-                                  AnimatedBuilder(
-                                    animation: _pulseAnimation,
-                                    builder: (context, child) {
-                                      return Transform.scale(
-                                        scale: _pulseAnimation.value,
-                                        child: Icon(Icons.mic,
-                                            color: primary, size: 32.0),
-                                      );
-                                    },
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      AnimatedBuilder(
+                                        animation: _pulseAnimation,
+                                        builder: (context, child) {
+                                          return Transform.scale(
+                                            scale: _isListening
+                                                ? _pulseAnimation.value
+                                                : 1.0,
+                                            child: Icon(
+                                              _isListening
+                                                  ? Icons.hearing
+                                                  : Icons.mic,
+                                              color: primary,
+                                              size: 32.0,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(width: 12.0),
+                                      TextWidget(
+                                        text: _isListening
+                                            ? 'Listening... 🧏'
+                                            : 'Tap Practice to speak 🗣️',
+                                        fontSize: 22.0,
+                                        color: black,
+                                        isBold: true,
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 12.0),
-                                  TextWidget(
-                                    text: 'Say it loud! 🗣️',
-                                    fontSize: 22.0,
-                                    color: black,
-                                    isBold: true,
-                                  ),
+                                  if (_recognizedText.isNotEmpty) ...[
+                                    const SizedBox(height: 12.0),
+                                    TextWidget(
+                                      text: 'Heard: ' + _recognizedText,
+                                      fontSize: 18.0,
+                                      color: black,
+                                      fontFamily: 'Regular',
+                                    ),
+                                  ],
+                                  if (_confidence > 0)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8.0),
+                                      child: TextWidget(
+                                        text: 'Confidence: ' +
+                                            (100 * _confidence)
+                                                .toStringAsFixed(0) +
+                                            '%',
+                                        fontSize: 14.0,
+                                        color: grey,
+                                      ),
+                                    ),
                                 ],
                               ),
                       ),
@@ -917,18 +1116,24 @@ class _PracticeScreenState extends State<PracticeScreen>
                             onPressed: isCurrentItemCompleted
                                 ? null
                                 : () {
-                                    _markCurrentItemAsCompleted();
+                                    if (_isListening) {
+                                      _stopListening();
+                                    } else {
+                                      _startListening();
+                                    }
                                   },
                             icon: Icon(
                                 isCurrentItemCompleted
                                     ? Icons.check
-                                    : Icons.mic,
+                                    : (_isListening ? Icons.stop : Icons.mic),
                                 color: white,
                                 size: 32.0),
                             label: TextWidget(
                               text: isCurrentItemCompleted
                                   ? 'Completed! 🎉'
-                                  : 'Practice Now! 🎤',
+                                  : (_isListening
+                                      ? 'Listening... Tap to stop'
+                                      : 'Practice Now! 🎤'),
                               fontSize: 24.0,
                               color: white,
                               isBold: true,
