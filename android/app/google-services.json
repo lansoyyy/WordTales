@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "511219583137",
+    "project_id": "wordtales-7cebd",
+    "storage_bucket": "wordtales-7cebd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:511219583137:android:3e8c9b772c43f1fa0a88e0",
+        "android_client_info": {
+          "package_name": "com.example.word_tales"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCDrkyahUUFnPA7oguN7F4g0o6cxoJL6EA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
