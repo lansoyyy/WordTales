@@ -2,9 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:word_tales/screens/practice_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
+import 'package:word_tales/services/student_service.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
-  const TeacherHomeScreen({super.key});
+  final String teacherId;
+  final String teacherName;
+
+  const TeacherHomeScreen({
+    super.key,
+    required this.teacherId,
+    required this.teacherName,
+  });
 
   @override
   State<TeacherHomeScreen> createState() => _TeacherHomeScreenState();
@@ -16,6 +25,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   late Animation<double> _cardAnimation;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+
+  final StudentService _studentService = StudentService();
+  List<Map<String, dynamic>> _students = [];
+  bool _isLoading = true;
 
   // Level data with descriptions and content
   final List<Map<String, dynamic>> levels = [
@@ -141,70 +154,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     },
   ];
 
-  // Placeholder data for students and their level progress
-  final List<Map<String, dynamic>> students = [
-    {
-      'name': 'Emma',
-      'levelProgress': {
-        1: {
-          'completed': true,
-          'score': 50,
-          'totalItems': 5,
-          'date': '2025-07-07'
-        },
-        2: {
-          'completed': true,
-          'score': 90,
-          'totalItems': 10,
-          'date': '2025-07-08'
-        },
-        3: {'completed': false, 'score': 0, 'totalItems': 15, 'date': null},
-        4: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
-        5: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
-      },
-    },
-    {
-      'name': 'Liam',
-      'levelProgress': {
-        1: {
-          'completed': true,
-          'score': 50,
-          'totalItems': 5,
-          'date': '2025-07-06'
-        },
-        2: {
-          'completed': true,
-          'score': 80,
-          'totalItems': 10,
-          'date': '2025-07-07'
-        },
-        3: {
-          'completed': true,
-          'score': 120,
-          'totalItems': 15,
-          'date': '2025-07-08'
-        },
-        4: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
-        5: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
-      },
-    },
-    {
-      'name': 'Max',
-      'levelProgress': {
-        1: {
-          'completed': true,
-          'score': 50,
-          'totalItems': 5,
-          'date': '2025-07-05'
-        },
-        2: {'completed': false, 'score': 0, 'totalItems': 10, 'date': null},
-        3: {'completed': false, 'score': 0, 'totalItems': 15, 'date': null},
-        4: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
-        5: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
-      },
-    },
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -215,6 +164,33 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     _cardAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.bounceOut),
     );
+    _loadStudents();
+  }
+
+  // Load students from Firebase
+  Future<void> _loadStudents() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final students =
+          await _studentService.getStudentsByTeacher(widget.teacherId);
+      setState(() {
+        _students = students;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Error loading students: $e');
+      setState(() {
+        _isLoading = false;
+      });
+      Fluttertoast.showToast(
+        msg: 'Error loading students',
+        backgroundColor: Colors.red,
+        textColor: white,
+      );
+    }
   }
 
   @override
@@ -227,39 +203,105 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   // Get filtered students based on search query
   List<Map<String, dynamic>> get filteredStudents {
     if (_searchQuery.isEmpty) {
-      return students;
+      return _students;
     }
-    return students
+    return _students
         .where((student) =>
             student['name'].toLowerCase().contains(_searchQuery.toLowerCase()))
         .toList();
   }
 
+  // Add new student
+  Future<void> _addStudent() async {
+    final TextEditingController nameController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: TextWidget(
+          text: 'Add New Student',
+          fontSize: 20.0,
+          color: primary,
+          isBold: true,
+        ),
+        content: TextField(
+          controller: nameController,
+          decoration: InputDecoration(
+            hintText: 'Student Name',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8.0),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: TextWidget(
+              text: 'Cancel',
+              fontSize: 16.0,
+              color: grey,
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.trim().isNotEmpty) {
+                try {
+                  await _studentService.createStudent(
+                    name: nameController.text.trim(),
+                    teacherId: widget.teacherId,
+                  );
+                  Navigator.pop(context);
+                  _loadStudents();
+                  Fluttertoast.showToast(
+                    msg: 'Student added successfully',
+                    backgroundColor: Colors.green,
+                    textColor: white,
+                  );
+                } catch (e) {
+                  Fluttertoast.showToast(
+                    msg: 'Error adding student',
+                    backgroundColor: Colors.red,
+                    textColor: white,
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primary,
+            ),
+            child: TextWidget(
+              text: 'Add',
+              fontSize: 16.0,
+              color: white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // Get level statistics for a specific level
   Map<String, dynamic> getLevelStats(int levelNumber) {
-    int totalStudents = students.length;
+    int totalStudents = _students.length;
     int completedStudents = 0;
-    int totalScore = 0;
-    double averageScore = 0.0;
+    double totalScore = 0;
 
-    for (var student in students) {
-      final levelData = student['levelProgress'][levelNumber];
-      if (levelData != null && levelData['completed']) {
-        completedStudents++;
-        totalScore += 5;
+    for (var student in _students) {
+      final levelProgress = student['levelProgress'];
+      if (levelProgress != null && levelProgress['$levelNumber'] != null) {
+        final levelData = levelProgress['$levelNumber'];
+        if (levelData['completed'] == true) {
+          completedStudents++;
+          totalScore += (levelData['score'] ?? 0).toDouble();
+        }
       }
-    }
-
-    if (completedStudents > 0) {
-      averageScore = totalScore / completedStudents;
     }
 
     return {
       'totalStudents': totalStudents,
       'completedStudents': completedStudents,
-      'averageScore': averageScore,
-      'completionRate':
-          totalStudents > 0 ? (completedStudents / totalStudents) * 100 : 0.0,
+      'averageScore':
+          completedStudents > 0 ? totalScore / completedStudents : 0.0,
     };
   }
 
@@ -944,9 +986,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
               // Student list
               Expanded(
                 child: ListView.builder(
-                  itemCount: students.length,
+                  itemCount: _students.length,
                   itemBuilder: (context, index) {
-                    final student = students[index];
+                    final student = _students[index];
                     final levelData = student['levelProgress'][level['level']];
                     final isCompleted =
                         levelData != null && levelData['completed'];
@@ -1102,12 +1144,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   @override
   Widget build(BuildContext context) {
     // Calculate summary stats
-    int totalStudents = students.length;
-    int totalCompletedLevels = students.fold(0, (sum, student) {
+    int totalStudents = _students.length;
+    int totalCompletedLevels = _students.fold(0, (sum, student) {
       return sum + 5;
     });
-    double averageAccuracy = students.isNotEmpty
-        ? (totalCompletedLevels * 100.0) / (students.length * 5)
+    double averageAccuracy = _students.isNotEmpty
+        ? (totalCompletedLevels * 100.0) / (_students.length * 5)
         : 0.0;
 
     return Scaffold(
@@ -1422,7 +1464,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
               ),
               const SizedBox(height: 16.0),
               // Student List with Level Progress
-              ListView.builder(
+              _isLoading
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: CircularProgressIndicator(color: primary),
+                      ),
+                    )
+                  : ListView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: filteredStudents.length,
@@ -1566,6 +1615,17 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
               ),
             ],
           ),
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _addStudent,
+        backgroundColor: primary,
+        icon: Icon(Icons.person_add, color: white),
+        label: TextWidget(
+          text: 'Add Student',
+          fontSize: 16.0,
+          color: white,
+          isBold: true,
         ),
       ),
     );

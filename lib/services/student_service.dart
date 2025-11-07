@@ -1,0 +1,187 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class StudentService {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  // Collection references
+  final String _studentsCollection = 'students';
+
+  // Create a new student
+  Future<String> createStudent({
+    required String name,
+    required String teacherId,
+  }) async {
+    try {
+      final docRef = await _firestore.collection(_studentsCollection).add({
+        'name': name,
+        'teacherId': teacherId,
+        'createdAt': FieldValue.serverTimestamp(),
+        'isActive': true,
+        'levelProgress': {
+          '1': {'completed': false, 'score': 0, 'totalItems': 5, 'date': null},
+          '2': {'completed': false, 'score': 0, 'totalItems': 10, 'date': null},
+          '3': {'completed': false, 'score': 0, 'totalItems': 15, 'date': null},
+          '4': {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
+          '5': {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
+        },
+      });
+      print('Student created with ID: ${docRef.id}');
+      return docRef.id;
+    } catch (e) {
+      print('Error creating student: $e');
+      rethrow;
+    }
+  }
+
+  // Get all students for a teacher
+  Future<List<Map<String, dynamic>>> getStudentsByTeacher(
+      String teacherId) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection(_studentsCollection)
+          .where('teacherId', isEqualTo: teacherId)
+          .where('isActive', isEqualTo: true)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return querySnapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+    } catch (e) {
+      print('Error getting students: $e');
+      rethrow;
+    }
+  }
+
+  // Get student by ID
+  Future<Map<String, dynamic>?> getStudent(String studentId) async {
+    try {
+      final doc =
+          await _firestore.collection(_studentsCollection).doc(studentId).get();
+      if (doc.exists) {
+        final data = doc.data();
+        data?['id'] = doc.id;
+        return data;
+      }
+      return null;
+    } catch (e) {
+      print('Error getting student: $e');
+      rethrow;
+    }
+  }
+
+  // Update student information
+  Future<void> updateStudent(
+      String studentId, Map<String, dynamic> data) async {
+    try {
+      await _firestore
+          .collection(_studentsCollection)
+          .doc(studentId)
+          .update(data);
+    } catch (e) {
+      print('Error updating student: $e');
+      rethrow;
+    }
+  }
+
+  // Update student level progress
+  Future<void> updateLevelProgress({
+    required String studentId,
+    required int level,
+    required int score,
+    required int totalItems,
+  }) async {
+    try {
+      await _firestore.collection(_studentsCollection).doc(studentId).update({
+        'levelProgress.$level': {
+          'completed': true,
+          'score': score,
+          'totalItems': totalItems,
+          'date': DateTime.now().toString().split(' ')[0],
+        }
+      });
+    } catch (e) {
+      print('Error updating level progress: $e');
+      rethrow;
+    }
+  }
+
+  // Delete student (soft delete)
+  Future<void> deleteStudent(String studentId) async {
+    try {
+      await _firestore
+          .collection(_studentsCollection)
+          .doc(studentId)
+          .update({'isActive': false});
+    } catch (e) {
+      print('Error deleting student: $e');
+      rethrow;
+    }
+  }
+
+  // Get student count for a teacher
+  Future<int> getStudentCount(String teacherId) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection(_studentsCollection)
+          .where('teacherId', isEqualTo: teacherId)
+          .where('isActive', isEqualTo: true)
+          .get();
+      return querySnapshot.docs.length;
+    } catch (e) {
+      print('Error getting student count: $e');
+      rethrow;
+    }
+  }
+
+  // Get level statistics for a teacher
+  Future<Map<String, dynamic>> getLevelStats(
+      String teacherId, int level) async {
+    try {
+      final students = await getStudentsByTeacher(teacherId);
+      int completedStudents = 0;
+      double totalScore = 0;
+
+      for (var student in students) {
+        final levelProgress = student['levelProgress'];
+        if (levelProgress != null && levelProgress['$level'] != null) {
+          final levelData = levelProgress['$level'];
+          if (levelData['completed'] == true) {
+            completedStudents++;
+            totalScore += (levelData['score'] ?? 0).toDouble();
+          }
+        }
+      }
+
+      return {
+        'totalStudents': students.length,
+        'completedStudents': completedStudents,
+        'averageScore':
+            completedStudents > 0 ? totalScore / completedStudents : 0.0,
+      };
+    } catch (e) {
+      print('Error getting level stats: $e');
+      rethrow;
+    }
+  }
+
+  // Stream students for real-time updates
+  Stream<List<Map<String, dynamic>>> streamStudentsByTeacher(
+      String teacherId) {
+    return _firestore
+        .collection(_studentsCollection)
+        .where('teacherId', isEqualTo: teacherId)
+        .where('isActive', isEqualTo: true)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+    });
+  }
+}

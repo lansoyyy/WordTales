@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:word_tales/firebase_options.dart';
 import 'package:word_tales/screens/home_screen.dart';
 import 'package:word_tales/screens/splash_screen.dart';
+import 'package:word_tales/services/auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,6 +11,11 @@ void main() async {
     name: 'wordtales-7cebd',
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Initialize default teacher account
+  final authService = AuthService();
+  await authService.initializeDefaultTeacher();
+
   runApp(const MyApp());
 }
 

@@ -4,6 +4,9 @@ import 'package:word_tales/screens/teacher.home_screen.dart';
 import 'package:word_tales/screens/reminder_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
+import 'package:word_tales/services/auth_service.dart';
+import 'package:word_tales/services/student_service.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,12 +21,128 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _studentNameController = TextEditingController();
   bool _obscurePassword = true;
   bool _showTeacherLogin = false;
+  bool _isLoading = false;
+  
+  final AuthService _authService = AuthService();
+  final StudentService _studentService = StudentService();
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _studentNameController.dispose();
     super.dispose();
+  }
+
+  // Handle student login/creation
+  Future<void> _handleStudentLogin() async {
+    if (_studentNameController.text.trim().isEmpty) {
+      Fluttertoast.showToast(
+        msg: 'Please enter student name',
+        backgroundColor: Colors.red,
+        textColor: white,
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Create student with default teacher
+      await _studentService.createStudent(
+        name: _studentNameController.text.trim(),
+        teacherId: 'default_teacher',
+      );
+
+      Fluttertoast.showToast(
+        msg: 'Welcome ${_studentNameController.text}!',
+        backgroundColor: Colors.green,
+        textColor: white,
+      );
+
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const ReminderScreen()),
+        );
+      }
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: 'Error: ${e.toString()}',
+        backgroundColor: Colors.red,
+        textColor: white,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Handle teacher login
+  Future<void> _handleTeacherLogin() async {
+    if (_emailController.text.trim().isEmpty ||
+        _passwordController.text.trim().isEmpty) {
+      Fluttertoast.showToast(
+        msg: 'Please enter email and password',
+        backgroundColor: Colors.red,
+        textColor: white,
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final teacher = await _authService.loginTeacher(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
+
+      if (teacher != null) {
+        Fluttertoast.showToast(
+          msg: 'Welcome ${teacher['name']}!',
+          backgroundColor: Colors.green,
+          textColor: white,
+        );
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => TeacherHomeScreen(
+                teacherId: teacher['id'],
+                teacherName: teacher['name'],
+              ),
+            ),
+          );
+        }
+      } else {
+        Fluttertoast.showToast(
+          msg: 'Invalid email or password',
+          backgroundColor: Colors.red,
+          textColor: white,
+        );
+      }
+    } catch (e) {
+      Fluttertoast.showToast(
+        msg: 'Error: ${e.toString()}',
+        backgroundColor: Colors.red,
+        textColor: white,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -142,21 +261,17 @@ class _LoginScreenState extends State<LoginScreen> {
               ],
               // Continue button for kids
               ElevatedButton(
-                onPressed: _showTeacherLogin
-                    ? () {
-                        setState(() {
-                          _showTeacherLogin = false;
-                        });
-                      }
-                    : _studentNameController.text == ''
-                        ? null
-                        : () {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (context) => const ReminderScreen()),
-                            );
-                          },
+                onPressed: _isLoading
+                    ? null
+                    : _showTeacherLogin
+                        ? () {
+                            setState(() {
+                              _showTeacherLogin = false;
+                            });
+                          }
+                        : _studentNameController.text.trim().isEmpty
+                            ? null
+                            : _handleStudentLogin,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: secondary,
                   foregroundColor: black,
@@ -165,50 +280,37 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(12.0),
                   ),
                 ),
-                child: TextWidget(
-                  text: _showTeacherLogin ? 'Student Login' : 'Continue',
-                  fontSize: 20.0,
-                  color: black,
-                  isBold: true,
-                ),
+                child: _isLoading && !_showTeacherLogin
+                    ? SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: black,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : TextWidget(
+                        text: _showTeacherLogin ? 'Student Login' : 'Continue',
+                        fontSize: 20.0,
+                        color: black,
+                        isBold: true,
+                      ),
               ),
               const SizedBox(height: 16.0),
               // Continue as Teacher button
               ElevatedButton(
-                onPressed: _showTeacherLogin
-                    ? _emailController.text == '' ||
-                            _passwordController.text == ''
-                        ? null
+                onPressed: _isLoading
+                    ? null
+                    : _showTeacherLogin
+                        ? _emailController.text.trim().isEmpty ||
+                                _passwordController.text.trim().isEmpty
+                            ? null
+                            : _handleTeacherLogin
                         : () {
-                            if (_showTeacherLogin) {
-                              // Handle teacher login logic here
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (context) =>
-                                        const TeacherHomeScreen()),
-                              );
-                            } else {
-                              setState(() {
-                                _showTeacherLogin = true;
-                              });
-                            }
-                          }
-                    : () {
-                        if (_showTeacherLogin) {
-                          // Handle teacher login logic here
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) =>
-                                    const TeacherHomeScreen()),
-                          );
-                        } else {
-                          setState(() {
-                            _showTeacherLogin = true;
-                          });
-                        }
-                      },
+                            setState(() {
+                              _showTeacherLogin = true;
+                            });
+                          },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primary,
                   foregroundColor: white,
@@ -217,14 +319,23 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(12.0),
                   ),
                 ),
-                child: TextWidget(
-                  text: _showTeacherLogin
-                      ? 'Continue as Teacher'
-                      : 'Teacher Login',
-                  fontSize: 20.0,
-                  color: white,
-                  isBold: true,
-                ),
+                child: _isLoading && _showTeacherLogin
+                    ? SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : TextWidget(
+                        text: _showTeacherLogin
+                            ? 'Continue as Teacher'
+                            : 'Teacher Login',
+                        fontSize: 20.0,
+                        color: white,
+                        isBold: true,
+                      ),
               ),
             ],
           ),
