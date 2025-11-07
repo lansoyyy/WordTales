@@ -49,14 +49,14 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // Create student with default teacher
-      await _studentService.createStudent(
+      // Find or create student with default teacher
+      await _studentService.findOrCreateStudent(
         name: _studentNameController.text.trim(),
         teacherId: 'default_teacher',
       );
 
       Fluttertoast.showToast(
-        msg: 'Welcome ${_studentNameController.text}!',
+        msg: 'Welcome back, ${_studentNameController.text}!',
         backgroundColor: Colors.green,
         textColor: white,
       );

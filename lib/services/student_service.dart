@@ -72,6 +72,64 @@ class StudentService {
     }
   }
 
+  // Get student by name and teacher ID
+  Future<Map<String, dynamic>?> getStudentByName({
+    required String name,
+    required String teacherId,
+  }) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection(_studentsCollection)
+          .where('name', isEqualTo: name)
+          .where('teacherId', isEqualTo: teacherId)
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        final data = querySnapshot.docs.first.data();
+        data['id'] = querySnapshot.docs.first.id;
+        return data;
+      }
+      return null;
+    } catch (e) {
+      print('Error getting student by name: $e');
+      rethrow;
+    }
+  }
+
+  // Find or create student - returns existing student if name matches, creates new one if not
+  Future<Map<String, dynamic>> findOrCreateStudent({
+    required String name,
+    required String teacherId,
+  }) async {
+    try {
+      // First, try to find existing student
+      final existingStudent = await getStudentByName(
+        name: name,
+        teacherId: teacherId,
+      );
+
+      if (existingStudent != null) {
+        print('Found existing student: ${existingStudent['id']}');
+        return existingStudent;
+      }
+
+      // If not found, create new student
+      final studentId = await createStudent(
+        name: name,
+        teacherId: teacherId,
+      );
+
+      // Return the newly created student
+      final newStudent = await getStudent(studentId);
+      return newStudent!;
+    } catch (e) {
+      print('Error in findOrCreateStudent: $e');
+      rethrow;
+    }
+  }
+
   // Update student information
   Future<void> updateStudent(
       String studentId, Map<String, dynamic> data) async {
