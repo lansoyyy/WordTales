@@ -1,7 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:word_tales/firebase_options.dart';
-import 'package:word_tales/screens/home_screen.dart';
 import 'package:word_tales/screens/splash_screen.dart';
 import 'package:word_tales/services/auth_service.dart';
 
@@ -12,9 +11,9 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Initialize default teacher account
-  final authService = AuthService();
-  await authService.initializeDefaultTeacher();
+  // // Initialize default teacher account
+  // final authService = AuthService();
+  // await authService.initializeDefaultTeacher();
 
   runApp(const MyApp());
 }

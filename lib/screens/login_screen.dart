@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:word_tales/screens/home_screen.dart';
 import 'package:word_tales/screens/teacher.home_screen.dart';
 import 'package:word_tales/screens/reminder_screen.dart';
 import 'package:word_tales/utils/colors.dart';
@@ -22,7 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _showTeacherLogin = false;
   bool _isLoading = false;
-  
+
   final AuthService _authService = AuthService();
   final StudentService _studentService = StudentService();
 
