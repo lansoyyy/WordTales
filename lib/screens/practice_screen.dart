@@ -4,6 +4,7 @@ import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:word_tales/services/filipino_pronunciation_service.dart';
 
 class PracticeScreen extends StatefulWidget {
   bool? isTeacher;
@@ -51,6 +52,7 @@ class _PracticeScreenState extends State<PracticeScreen>
   String _recognizedText = '';
   double _confidence = 0.0;
   double _soundLevel = 0.0;
+  String? _selectedLocaleId;
 
   @override
   void initState() {
@@ -241,12 +243,51 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   Future<void> _initSpeech() async {
     _speech = stt.SpeechToText();
+
+    // Get available locales
+    final locales = await _speech.locales();
+    debugPrint('Available locales: ${locales.map((l) => l.localeId).toList()}');
+
+    // Try to find Filipino locale first, then fallback to English
+    try {
+      _selectedLocaleId = locales
+          .firstWhere(
+            (locale) =>
+                locale.localeId.startsWith('fil') ||
+                locale.localeId.startsWith('tl'),
+            orElse: () => locales.firstWhere(
+              (locale) => locale.localeId.startsWith('en'),
+            ),
+          )
+          .localeId;
+    } catch (e) {
+      debugPrint('Error finding locale: $e');
+      _selectedLocaleId = locales.isNotEmpty ? locales.first.localeId : null;
+    }
+
+    debugPrint('Selected locale: $_selectedLocaleId');
+
     final available = await _speech.initialize(
       onStatus: _onSpeechStatus,
       onError: (error) {
         debugPrint('Speech error: $error');
+        // Show user-friendly error for Filipino children
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Hindi ma-recognize ang speech. Subukan ulit! (Speech not recognized. Try again!)',
+                style: TextStyle(fontFamily: 'Regular'),
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       },
+      finalTimeout: const Duration(seconds: 10),
     );
+
     if (mounted) {
       setState(() {
         _speechAvailable = available;
@@ -284,6 +325,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       onResult: _onSpeechResult,
       partialResults: true,
       listenMode: stt.ListenMode.dictation,
+      localeId: _selectedLocaleId,
       onSoundLevelChange: (level) {
         if (!mounted) return;
         setState(() {
@@ -346,11 +388,22 @@ class _PracticeScreenState extends State<PracticeScreen>
     final t = _normalizeText(target);
     final h = _normalizeText(hyp);
     if (t.isEmpty || h.isEmpty) return false;
+
+    // Use Filipino pronunciation service for matching
+    final similarity =
+        FilipinoPronunciationService.calculateFilipinoSimilarity(t, h);
+
+    debugPrint('Target: "$t", Hypothesis: "$h", Similarity: $similarity');
+
     final type = practiceItems[_currentIndex]['type'];
     if (type == 'Word') {
-      return t == h || h.split(' ').contains(t);
+      // For words, use a lower threshold due to Filipino pronunciation variations
+      return similarity >= 0.7 || t == h || h.split(' ').contains(t);
     } else {
-      return h.contains(t) || _wordMatchRatio(t, h) >= 0.8;
+      // For sentences, use a moderate threshold
+      return similarity >= 0.75 ||
+          h.contains(t) ||
+          _wordMatchRatio(t, h) >= 0.8;
     }
   }
 
