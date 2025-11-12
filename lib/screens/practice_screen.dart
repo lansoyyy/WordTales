@@ -5,6 +5,7 @@ import 'package:word_tales/widgets/text_widget.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:word_tales/services/filipino_pronunciation_service.dart';
+import 'package:word_tales/utils/words.dart';
 
 class PracticeScreen extends StatefulWidget {
   bool? isTeacher;
@@ -100,145 +101,360 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   void _initializePracticeItems() {
-    // Initialize practice items based on level
+    // Initialize practice items based on level using words from words.dart
+    practiceItems = [];
+
     switch (widget.level) {
       case 1:
-        practiceItems = [
-          {'type': 'Word', 'content': 'A', 'emoji': '🔤'},
-          {'type': 'Word', 'content': 'I', 'emoji': '📝'},
-          {'type': 'Word', 'content': 'O', 'emoji': '📚'},
-          {'type': 'Word', 'content': 'U', 'emoji': '📖'},
-          {'type': 'Word', 'content': 'E', 'emoji': '📄'},
-        ];
+        // Use 1-letter words
+        for (int i = 0; i < oneLetterWords.length && i < 10; i++) {
+          practiceItems.add({
+            'type': 'Word',
+            'content': oneLetterWords[i],
+            'emoji': _getEmojiForLetter(oneLetterWords[i]),
+          });
+        }
         break;
       case 2:
-        practiceItems = [
-          {'type': 'Word', 'content': 'AT', 'emoji': '🐱'},
-          {'type': 'Word', 'content': 'IT', 'emoji': '🐶'},
-          {'type': 'Word', 'content': 'ON', 'emoji': '☀️'},
-          {'type': 'Word', 'content': 'UP', 'emoji': '⬆️'},
-          {'type': 'Word', 'content': 'IN', 'emoji': '🏠'},
-          {'type': 'Word', 'content': 'GO', 'emoji': '🚶'},
-          {'type': 'Word', 'content': 'TO', 'emoji': '🎯'},
-          {'type': 'Word', 'content': 'DO', 'emoji': '✅'},
-          {'type': 'Word', 'content': 'NO', 'emoji': '❌'},
-          {'type': 'Word', 'content': 'SO', 'emoji': '✨'},
-        ];
+        // Use 2-letter words
+        for (int i = 0; i < twoLetterWords.length && i < 15; i++) {
+          practiceItems.add({
+            'type': 'Word',
+            'content': twoLetterWords[i],
+            'emoji': _getEmojiForWord(twoLetterWords[i]),
+          });
+        }
         break;
       case 3:
+        // Use 3-letter words
+        for (int i = 0; i < threeLetterWords.length && i < 20; i++) {
+          practiceItems.add({
+            'type': 'Word',
+            'content': threeLetterWords[i],
+            'emoji': _getEmojiForWord(threeLetterWords[i]),
+          });
+        }
+        break;
+      case 4:
+        // Use 4-letter words
+        for (int i = 0; i < fourLetterWords.length && i < 25; i++) {
+          practiceItems.add({
+            'type': 'Word',
+            'content': fourLetterWords[i],
+            'emoji': _getEmojiForWord(fourLetterWords[i]),
+          });
+        }
+        break;
+      case 5:
+        // For level 5, we'll create simple sentences using the words
+        practiceItems = _createSimpleSentences();
+        break;
+      default:
+        // Default to some common words
         practiceItems = [
           {'type': 'Word', 'content': 'CAT', 'emoji': '🐱'},
           {'type': 'Word', 'content': 'DOG', 'emoji': '🐶'},
           {'type': 'Word', 'content': 'SUN', 'emoji': '☀️'},
-          {'type': 'Word', 'content': 'RUN', 'emoji': '🏃'},
-          {'type': 'Word', 'content': 'BIG', 'emoji': '🐘'},
-          {'type': 'Word', 'content': 'RED', 'emoji': '🔴'},
-          {'type': 'Word', 'content': 'BLUE', 'emoji': '🔵'},
-          {'type': 'Word', 'content': 'HOT', 'emoji': '🔥'},
-          {'type': 'Word', 'content': 'COLD', 'emoji': '❄️'},
-          {'type': 'Word', 'content': 'NEW', 'emoji': '🆕'},
-          {'type': 'Word', 'content': 'OLD', 'emoji': '👴'},
-          {'type': 'Word', 'content': 'BAD', 'emoji': '😞'},
-          {'type': 'Word', 'content': 'GOOD', 'emoji': '😊'},
-          {'type': 'Word', 'content': 'FUN', 'emoji': '🎉'},
-          {'type': 'Word', 'content': 'SAD', 'emoji': '😢'},
-        ];
-        break;
-      case 4:
-        practiceItems = [
-          {'type': 'Word', 'content': 'TREE', 'emoji': '🌳'},
-          {'type': 'Word', 'content': 'BOOK', 'emoji': '📚'},
-          {'type': 'Word', 'content': 'PLAY', 'emoji': '🎮'},
-          {'type': 'Word', 'content': 'JUMP', 'emoji': '🦘'},
-          {'type': 'Word', 'content': 'WALK', 'emoji': '🚶'},
-          {'type': 'Word', 'content': 'TALK', 'emoji': '💬'},
-          {'type': 'Word', 'content': 'READ', 'emoji': '📖'},
-          {'type': 'Word', 'content': 'WRITE', 'emoji': '✍️'},
-          {'type': 'Word', 'content': 'DRAW', 'emoji': '🎨'},
-          {'type': 'Word', 'content': 'SING', 'emoji': '🎤'},
-          {'type': 'Word', 'content': 'DANCE', 'emoji': '💃'},
-          {'type': 'Word', 'content': 'SWIM', 'emoji': '🏊'},
-          {'type': 'Word', 'content': 'FISH', 'emoji': '🐟'},
-          {'type': 'Word', 'content': 'BIRD', 'emoji': '🐦'},
-          {'type': 'Word', 'content': 'FROG', 'emoji': '🐸'},
-          {'type': 'Word', 'content': 'DUCK', 'emoji': '🦆'},
-          {'type': 'Word', 'content': 'BEAR', 'emoji': '🐻'},
-          {'type': 'Word', 'content': 'LION', 'emoji': '🦁'},
-          {'type': 'Word', 'content': 'TIGER', 'emoji': '🐯'},
-          {'type': 'Word', 'content': 'HORSE', 'emoji': '🐴'},
-        ];
-        break;
-      case 5:
-        practiceItems = [
-          {'type': 'Sentence', 'content': 'The cat is happy', 'emoji': '🐱😊'},
-          {'type': 'Sentence', 'content': 'I like to play', 'emoji': '🎮'},
-          {
-            'type': 'Sentence',
-            'content': 'The sun shines bright',
-            'emoji': '☀️✨'
-          },
-          {'type': 'Sentence', 'content': 'We can run fast', 'emoji': '🏃💨'},
-          {
-            'type': 'Sentence',
-            'content': 'The dog barks loud',
-            'emoji': '🐶🔊'
-          },
-          {
-            'type': 'Sentence',
-            'content': 'I love to read books',
-            'emoji': '📚❤️'
-          },
-          {
-            'type': 'Sentence',
-            'content': 'The bird sings sweetly',
-            'emoji': '🐦🎵'
-          },
-          {
-            'type': 'Sentence',
-            'content': 'We play in the park',
-            'emoji': '🎮🌳'
-          },
-          {
-            'type': 'Sentence',
-            'content': 'The fish swims in water',
-            'emoji': '🐟💧'
-          },
-          {
-            'type': 'Sentence',
-            'content': 'I eat my breakfast',
-            'emoji': '🍳🍽️'
-          },
-          {
-            'type': 'Sentence',
-            'content': 'The tree grows tall',
-            'emoji': '🌳📏'
-          },
-          {'type': 'Sentence', 'content': 'We walk to school', 'emoji': '🚶🏫'},
-          {
-            'type': 'Sentence',
-            'content': 'The flower smells nice',
-            'emoji': '🌸👃'
-          },
-          {'type': 'Sentence', 'content': 'I draw a picture', 'emoji': '🎨🖼️'},
-          {'type': 'Sentence', 'content': 'The moon is bright', 'emoji': '🌙✨'},
-          {'type': 'Sentence', 'content': 'We sing a song', 'emoji': '🎤🎵'},
-          {'type': 'Sentence', 'content': 'The car goes fast', 'emoji': '🚗💨'},
-          {'type': 'Sentence', 'content': 'I write my name', 'emoji': '✍️📝'},
-          {
-            'type': 'Sentence',
-            'content': 'The ball bounces high',
-            'emoji': '⚽⬆️'
-          },
-          {'type': 'Sentence', 'content': 'We dance together', 'emoji': '💃🕺'},
-        ];
-        break;
-      default:
-        practiceItems = [
-          {'type': 'Word', 'content': 'CAT', 'emoji': '🐱'},
-          {'type': 'Word', 'content': 'DOG', 'emoji': '🐶'},
-          {'type': 'Sentence', 'content': 'The cat is happy', 'emoji': '🐱😊'},
         ];
     }
+  }
+
+  String _getEmojiForLetter(String letter) {
+    switch (letter.toUpperCase()) {
+      case 'A':
+        return '🍎';
+      case 'B':
+        return '🐝';
+      case 'C':
+        return '🌙';
+      case 'D':
+        return '🦋';
+      case 'E':
+        return '🥚';
+      case 'F':
+        return '🌺';
+      case 'G':
+        return '🍇';
+      case 'H':
+        return '🏠';
+      case 'I':
+        return '🧊';
+      case 'J':
+        return '🪨';
+      case 'K':
+        return '🔑';
+      case 'L':
+        return '🍃';
+      case 'M':
+        return '🌙';
+      case 'N':
+        return '🌰';
+      case 'O':
+        return '⭕';
+      case 'P':
+        return '🌻';
+      case 'Q':
+        return '👑';
+      case 'R':
+        return '🌹';
+      case 'S':
+        return '☀️';
+      case 'T':
+        return '🌳';
+      case 'U':
+        return '☂️';
+      case 'V':
+        return '🦅';
+      case 'W':
+        return '💧';
+      case 'X':
+        return '❌';
+      case 'Y':
+        return '🧵';
+      case 'Z':
+        return '⚡';
+      default:
+        return '🔤';
+    }
+  }
+
+  String _getEmojiForWord(String word) {
+    // Common word to emoji mappings
+    switch (word.toUpperCase()) {
+      // Animals
+      case 'CAT':
+        return '🐱';
+      case 'DOG':
+        return '🐶';
+      case 'BIRD':
+        return '🐦';
+      case 'FISH':
+        return '🐟';
+      case 'FROG':
+        return '🐸';
+      case 'DUCK':
+        return '🦆';
+      case 'BEAR':
+        return '🐻';
+      case 'LION':
+        return '🦁';
+      case 'TIGER':
+        return '🐯';
+      case 'HORSE':
+        return '🐴';
+
+      // Nature
+      case 'SUN':
+        return '☀️';
+      case 'TREE':
+        return '🌳';
+      case 'MOON':
+        return '🌙';
+      case 'STAR':
+        return '⭐';
+      case 'RAIN':
+        return '🌧️';
+      case 'SNOW':
+        return '❄️';
+      case 'WIND':
+        return '💨';
+      case 'FIRE':
+        return '🔥';
+      case 'WATER':
+        return '💧';
+      case 'FLOWER':
+        return '🌸';
+
+      // Colors
+      case 'RED':
+        return '🔴';
+      case 'BLUE':
+        return '🔵';
+      case 'GREEN':
+        return '🟢';
+      case 'YELLOW':
+        return '🟡';
+      case 'BLACK':
+        return '⚫';
+      case 'WHITE':
+        return '⚪';
+      case 'PINK':
+        return '🩷';
+      case 'PURPLE':
+        return '🟣';
+      case 'ORANGE':
+        return '🟠';
+      case 'BROWN':
+        return '🟤';
+
+      // Food
+      case 'APPLE':
+        return '🍎';
+      case 'BANANA':
+        return '🍌';
+      case 'BREAD':
+        return '🍞';
+      case 'CAKE':
+        return '🎂';
+      case 'MILK':
+        return '🥛';
+      case 'EGG':
+        return '🥚';
+      case 'FISH':
+        return '🐟';
+      case 'RICE':
+        return '🍚';
+      case 'SOUP':
+        return '🍲';
+      case 'TEA':
+        return '🍵';
+
+      // Objects
+      case 'BOOK':
+        return '📚';
+      case 'BALL':
+        return '⚽';
+      case 'CAR':
+        return '🚗';
+      case 'DOOR':
+        return '🚪';
+      case 'KEY':
+        return '🔑';
+      case 'PEN':
+        return '🖊️';
+      case 'PHONE':
+        return '📱';
+      case 'TABLE':
+        return '🪑';
+      case 'TOY':
+        return '🧸';
+      case 'WATCH':
+        return '⌚';
+
+      // Actions
+      case 'RUN':
+        return '🏃';
+      case 'WALK':
+        return '🚶';
+      case 'JUMP':
+        return '🦘';
+      case 'SWIM':
+        return '🏊';
+      case 'PLAY':
+        return '🎮';
+      case 'SING':
+        return '🎤';
+      case 'DANCE':
+        return '💃';
+      case 'READ':
+        return '📖';
+      case 'WRITE':
+        return '✍️';
+      case 'DRAW':
+        return '🎨';
+      case 'SLEEP':
+        return '😴';
+      case 'EAT':
+        return '🍽️';
+      case 'DRINK':
+        return '🥤';
+      case 'TALK':
+        return '💬';
+
+      // Feelings
+      case 'HAPPY':
+        return '😊';
+      case 'SAD':
+        return '😢';
+      case 'ANGRY':
+        return '😠';
+      case 'LOVE':
+        return '❤️';
+      case 'FUN':
+        return '🎉';
+      case 'GOOD':
+        return '👍';
+      case 'BAD':
+        return '👎';
+      case 'BIG':
+        return '🐘';
+      case 'SMALL':
+        return '🐁';
+      case 'HOT':
+        return '🔥';
+      case 'COLD':
+        return '❄️';
+      case 'NEW':
+        return '🆕';
+      case 'OLD':
+        return '👴';
+
+      default:
+        return '📝'; // Default emoji for words
+    }
+  }
+
+  List<Map<String, String>> _createSimpleSentences() {
+    // Create simple sentences using words from our word lists
+    final List<Map<String, String>> sentences = [];
+
+    // Simple sentence patterns
+    final List<List<String>> sentencePatterns = [
+      ['THE', 'CAT', 'IS', 'HAPPY'],
+      ['I', 'CAN', 'SEE', 'THE', 'SUN'],
+      ['WE', 'PLAY', 'WITH', 'THE', 'BALL'],
+      ['THE', 'DOG', 'RUNS', 'FAST'],
+      ['I', 'LIKE', 'TO', 'READ', 'BOOKS'],
+      ['THE', 'BIRD', 'SINGS', 'NICE'],
+      ['WE', 'CAN', 'JUMP', 'HIGH'],
+      ['THE', 'FISH', 'SWIMS', 'IN', 'WATER'],
+      ['I', 'LOVE', 'MY', 'FAMILY'],
+      ['THE', 'TREE', 'IS', 'TALL'],
+      ['WE', 'WALK', 'TO', 'SCHOOL'],
+      ['THE', 'MOON', 'SHINES', 'BRIGHT'],
+      ['I', 'DRAW', 'A', 'PICTURE'],
+      ['THE', 'CAR', 'GOES', 'FAST'],
+      ['WE', 'SING', 'A', 'SONG'],
+      ['THE', 'BABY', 'IS', 'CUTE'],
+      ['I', 'EAT', 'MY', 'FOOD'],
+      ['THE', 'STAR', 'IS', 'BRIGHT'],
+      ['WE', 'DANCE', 'TOGETHER'],
+      ['THE', 'RAIN', 'FALLS', 'DOWN'],
+    ];
+
+    // Create sentences with emojis
+    final List<String> emojis = [
+      '🐱😊',
+      '☀️👀',
+      '⚽🎮',
+      '🐶💨',
+      '📚❤️',
+      '🐦🎵',
+      '🦘⬆️',
+      '🐟💧',
+      '❤️👨‍👩‍👧‍👦',
+      '🌳📏',
+      '🚶🏫',
+      '🌙✨',
+      '🎨🖼️',
+      '🚗💨',
+      '🎤🎵',
+      '👶😊',
+      '🍽️😋',
+      '⭐✨',
+      '💃🕺',
+      '🌧️⬇️'
+    ];
+
+    for (int i = 0; i < sentencePatterns.length && i < emojis.length; i++) {
+      sentences.add({
+        'type': 'Sentence',
+        'content': sentencePatterns[i].join(' '),
+        'emoji': emojis[i],
+      });
+    }
+
+    return sentences;
   }
 
   Future<void> _initSpeech() async {
