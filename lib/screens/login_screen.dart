@@ -6,6 +6,7 @@ import 'package:word_tales/widgets/text_widget.dart';
 import 'package:word_tales/services/auth_service.dart';
 import 'package:word_tales/services/student_service.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -54,6 +55,10 @@ class _LoginScreenState extends State<LoginScreen> {
         name: _studentNameController.text.trim(),
         teacherId: 'default_teacher',
       );
+
+      // Save student name to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('student_name', _studentNameController.text.trim());
 
       Fluttertoast.showToast(
         msg: 'Welcome back, ${_studentNameController.text}!',

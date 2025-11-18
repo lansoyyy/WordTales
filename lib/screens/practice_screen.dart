@@ -6,12 +6,17 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:word_tales/services/filipino_pronunciation_service.dart';
 import 'package:word_tales/utils/words.dart';
+import 'package:word_tales/services/student_service.dart';
+import 'package:word_tales/services/auth_service.dart';
+import 'dart:async';
 
 class PracticeScreen extends StatefulWidget {
   bool? isTeacher;
   int? level;
   String? levelTitle;
   String? levelDescription;
+  String? studentId;
+  String? studentName;
   VoidCallback? onLevelCompleted;
   Function(int score, int totalItems)? onLevelCompletedWithScore;
 
@@ -20,6 +25,8 @@ class PracticeScreen extends StatefulWidget {
     this.level,
     this.levelTitle,
     this.levelDescription,
+    this.studentId,
+    this.studentName,
     this.onLevelCompleted,
     this.onLevelCompletedWithScore,
   });
@@ -54,6 +61,15 @@ class _PracticeScreenState extends State<PracticeScreen>
   double _confidence = 0.0;
   double _soundLevel = 0.0;
   String? _selectedLocaleId;
+
+  // Incorrect pronunciation tracking
+  int _incorrectAttempts = 0;
+  bool _showIncorrectFeedback = false;
+  Timer? _incorrectFeedbackTimer;
+  List<String> _characterFeedback = [];
+
+  // Services
+  final StudentService _studentService = StudentService();
 
   @override
   void initState() {
@@ -577,12 +593,176 @@ class _PracticeScreenState extends State<PracticeScreen>
     });
 
     final target = practiceItems[_currentIndex]['content']!;
+
+    // Generate character-by-character feedback
+    _generateCharacterFeedback(target, _recognizedText);
+
     if (_matchesTarget(target, _recognizedText)) {
       _stopListening();
       if (!_completedItems.contains(_currentIndex)) {
         _markCurrentItemAsCompleted();
       }
+    } else if (_recognizedText.isNotEmpty) {
+      // Check if the speech contains both correct and incorrect parts
+      final hasCorrectParts = _hasCorrectComponents(target, _recognizedText);
+      final hasIncorrectParts =
+          _hasIncorrectComponents(target, _recognizedText);
+
+      if (hasCorrectParts && hasIncorrectParts) {
+        // Mixed pronunciation - provide specific feedback
+        _showMixedFeedbackMessage();
+      } else {
+        // Show incorrect feedback
+        _showIncorrectFeedbackMessage();
+      }
     }
+  }
+
+  void _generateCharacterFeedback(String target, String spoken) {
+    final targetChars = target.toUpperCase().split('');
+    final spokenChars = spoken.toUpperCase().split('');
+    final feedback = <String>[];
+
+    for (int i = 0; i < targetChars.length; i++) {
+      if (i < spokenChars.length && targetChars[i] == spokenChars[i]) {
+        feedback.add('correct');
+      } else if (i < spokenChars.length) {
+        feedback.add('incorrect');
+      } else {
+        feedback.add('missing');
+      }
+    }
+
+    setState(() {
+      _characterFeedback = feedback;
+    });
+  }
+
+  void _showIncorrectFeedbackMessage() {
+    setState(() {
+      _incorrectAttempts++;
+      _showIncorrectFeedback = true;
+    });
+
+    // Clear previous timer if exists
+    _incorrectFeedbackTimer?.cancel();
+
+    // Hide feedback after 3 seconds
+    _incorrectFeedbackTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _showIncorrectFeedback = false;
+        });
+      }
+    });
+  }
+
+  bool _hasCorrectComponents(String target, String spoken) {
+    final targetWords = target.toUpperCase().split(' ');
+    final spokenWords = spoken.toUpperCase().split(' ');
+
+    // Check if any target words are present in spoken text
+    for (final targetWord in targetWords) {
+      for (final spokenWord in spokenWords) {
+        if (spokenWord.contains(targetWord) ||
+            targetWord.contains(spokenWord)) {
+          return true;
+        }
+      }
+    }
+
+    // Check character-level matches
+    final targetChars = target.toUpperCase().replaceAll(' ', '').split('');
+    final spokenChars = spoken.toUpperCase().replaceAll(' ', '').split('');
+
+    int correctChars = 0;
+    for (int i = 0; i < targetChars.length && i < spokenChars.length; i++) {
+      if (targetChars[i] == spokenChars[i]) {
+        correctChars++;
+      }
+    }
+
+    // If more than 50% of characters are correct, consider it has correct parts
+    return correctChars > targetChars.length * 0.5;
+  }
+
+  bool _hasIncorrectComponents(String target, String spoken) {
+    final targetWords = target.toUpperCase().split(' ');
+    final spokenWords = spoken.toUpperCase().split(' ');
+
+    // Check if there are spoken words not in target
+    for (final spokenWord in spokenWords) {
+      bool foundInTarget = false;
+      for (final targetWord in targetWords) {
+        if (spokenWord.contains(targetWord) ||
+            targetWord.contains(spokenWord)) {
+          foundInTarget = true;
+          break;
+        }
+      }
+      if (!foundInTarget && spokenWord.isNotEmpty) {
+        return true;
+      }
+    }
+
+    // Check character-level mismatches
+    final targetChars = target.toUpperCase().replaceAll(' ', '').split('');
+    final spokenChars = spoken.toUpperCase().replaceAll(' ', '').split('');
+
+    int incorrectChars = 0;
+    for (int i = 0; i < targetChars.length && i < spokenChars.length; i++) {
+      if (targetChars[i] != spokenChars[i]) {
+        incorrectChars++;
+      }
+    }
+
+    // If more than 30% of characters are incorrect, consider it has incorrect parts
+    return incorrectChars > targetChars.length * 0.3;
+  }
+
+  void _showMixedFeedbackMessage() {
+    setState(() {
+      _incorrectAttempts++;
+      _showIncorrectFeedback = true;
+    });
+
+    // Clear previous timer if exists
+    _incorrectFeedbackTimer?.cancel();
+
+    // Hide feedback after 4 seconds (longer for mixed feedback)
+    _incorrectFeedbackTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) {
+        setState(() {
+          _showIncorrectFeedback = false;
+        });
+      }
+    });
+  }
+
+  String _getEncouragingMessage() {
+    final messages = [
+      'Almost there! Try again! 🌟',
+      'Good try! Keep practicing! 💪',
+      'You\'re getting closer! 🎯',
+      'Don\'t give up! You can do it! 🚀',
+      'Practice makes perfect! 📚',
+      'Nice effort! Try once more! 👍',
+    ];
+
+    return messages[_incorrectAttempts % messages.length];
+  }
+
+  String _getMixedFeedbackMessage() {
+    final messages = [
+      'Good start! Some letters are right, keep trying! 🌈',
+      'You\'re close! Check the red letters and try again! 🎯',
+      'Nice try! Focus on the highlighted letters! 💡',
+      'Almost there! Some parts are perfect! ⭐',
+      'Good effort! Look at the green letters and fix the red ones! 🔍',
+      'You\'re learning! Try to say the red letters correctly! 📚',
+    ];
+
+    return messages[_incorrectAttempts % messages.length];
   }
 
   String _normalizeText(String s) {
@@ -623,12 +803,54 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
   }
 
+  // Save progress to Firestore
+  Future<void> _saveProgressToFirestore() async {
+    if (widget.isTeacher! || widget.studentId == null) return;
+
+    try {
+      await _studentService.updateLevelProgress(
+        studentId: widget.studentId!,
+        level: widget.level!,
+        score: _score,
+        totalItems: _totalItems,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Progress saved successfully! 🎉',
+              style: TextStyle(fontFamily: 'Regular'),
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error saving progress: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error saving progress. Please try again.',
+              style: TextStyle(fontFamily: 'Regular'),
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
     _bounceController.dispose();
     _pulseController.dispose();
     _celebrationController.dispose();
+    _incorrectFeedbackTimer?.cancel();
     if (_isListening) {
       _speech.stop();
     }
@@ -638,6 +860,9 @@ class _PracticeScreenState extends State<PracticeScreen>
   void _nextItem() {
     setState(() {
       _currentIndex = (_currentIndex + 1) % practiceItems.length;
+      // Reset character feedback when moving to next item
+      _characterFeedback = [];
+      _showIncorrectFeedback = false;
     });
     if (_isListening) {
       _stopListening();
@@ -648,9 +873,15 @@ class _PracticeScreenState extends State<PracticeScreen>
     setState(() {
       _completedItems.add(_currentIndex);
       _score += 10; // Add 10 points for each completed item
+      // Reset character feedback when item is completed
+      _characterFeedback = [];
+      _showIncorrectFeedback = false;
+      _incorrectAttempts = 0;
 
       // Check if all items are completed
       if (_completedItems.length == practiceItems.length) {
+        // Save progress to Firestore when level is completed
+        _saveProgressToFirestore();
         // Level completed!
         _showLevelCompletedDialog();
       }
@@ -1201,16 +1432,80 @@ class _PracticeScreenState extends State<PracticeScreen>
                                 ),
                                 const SizedBox(height: 16.0),
 
-                                // Content text
-                                TextWidget(
-                                  text: currentItem['content']!,
-                                  fontSize: 42.0,
-                                  color: primary,
-                                  isBold: true,
-                                  maxLines: 3,
-                                  align: TextAlign.center,
-                                  fontFamily: 'Regular',
-                                ),
+                                // Content text with character feedback
+                                if (_characterFeedback.isEmpty)
+                                  TextWidget(
+                                    text: currentItem['content']!,
+                                    fontSize: 42.0,
+                                    color: primary,
+                                    isBold: true,
+                                    maxLines: 3,
+                                    align: TextAlign.center,
+                                    fontFamily: 'Regular',
+                                  )
+                                else
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: List.generate(
+                                      currentItem['content']!.length,
+                                      (index) => Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 4.0,
+                                          vertical: 8.0,
+                                        ),
+                                        margin: const EdgeInsets.symmetric(
+                                          horizontal: 2.0,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: index <
+                                                  _characterFeedback.length
+                                              ? (_characterFeedback[index] ==
+                                                      'correct'
+                                                  ? Colors.green
+                                                      .withOpacity(0.3)
+                                                  : _characterFeedback[index] ==
+                                                          'incorrect'
+                                                      ? Colors.red
+                                                          .withOpacity(0.3)
+                                                      : Colors.grey
+                                                          .withOpacity(0.2))
+                                              : Colors.grey.withOpacity(0.2),
+                                          borderRadius:
+                                              BorderRadius.circular(8.0),
+                                          border: Border.all(
+                                            color: index <
+                                                    _characterFeedback.length
+                                                ? (_characterFeedback[index] ==
+                                                        'correct'
+                                                    ? Colors.green
+                                                    : _characterFeedback[
+                                                                index] ==
+                                                            'incorrect'
+                                                        ? Colors.red
+                                                        : Colors.grey)
+                                                : Colors.grey,
+                                            width: 2.0,
+                                          ),
+                                        ),
+                                        child: TextWidget(
+                                          text: currentItem['content']![index],
+                                          fontSize: 42.0,
+                                          color: index <
+                                                  _characterFeedback.length
+                                              ? (_characterFeedback[index] ==
+                                                      'correct'
+                                                  ? Colors.green
+                                                  : _characterFeedback[index] ==
+                                                          'incorrect'
+                                                      ? Colors.red
+                                                      : Colors.grey)
+                                              : primary,
+                                          isBold: true,
+                                          fontFamily: 'Regular',
+                                        ),
+                                      ),
+                                    ),
+                                  ),
 
                                 if (isCurrentItemCompleted)
                                   Container(
@@ -1359,6 +1654,82 @@ class _PracticeScreenState extends State<PracticeScreen>
                                       fontFamily: 'Regular',
                                     ),
                                   ],
+
+                                  // Incorrect pronunciation feedback
+                                  if (_showIncorrectFeedback) ...[
+                                    const SizedBox(height: 12.0),
+                                    Container(
+                                      padding: const EdgeInsets.all(12.0),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: _characterFeedback
+                                                      .contains('correct') &&
+                                                  _characterFeedback
+                                                      .contains('incorrect')
+                                              ? [
+                                                  Colors.amber.shade100,
+                                                  Colors.yellow.shade100,
+                                                ]
+                                              : [
+                                                  Colors.red.shade100,
+                                                  Colors.orange.shade100,
+                                                ],
+                                        ),
+                                        borderRadius:
+                                            BorderRadius.circular(12.0),
+                                        border: Border.all(
+                                          color: _characterFeedback
+                                                      .contains('correct') &&
+                                                  _characterFeedback
+                                                      .contains('incorrect')
+                                              ? Colors.amber.shade300
+                                              : Colors.red.shade300,
+                                          width: 2.0,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            _characterFeedback
+                                                        .contains('correct') &&
+                                                    _characterFeedback
+                                                        .contains('incorrect')
+                                                ? Icons.lightbulb_outline
+                                                : Icons.error_outline,
+                                            color: _characterFeedback
+                                                        .contains('correct') &&
+                                                    _characterFeedback
+                                                        .contains('incorrect')
+                                                ? Colors.amber.shade600
+                                                : Colors.red.shade600,
+                                            size: 24.0,
+                                          ),
+                                          const SizedBox(width: 8.0),
+                                          Flexible(
+                                            child: TextWidget(
+                                              text: _characterFeedback.contains(
+                                                          'correct') &&
+                                                      _characterFeedback
+                                                          .contains('incorrect')
+                                                  ? _getMixedFeedbackMessage()
+                                                  : _getEncouragingMessage(),
+                                              fontSize: 16.0,
+                                              color: _characterFeedback
+                                                          .contains(
+                                                              'correct') &&
+                                                      _characterFeedback
+                                                          .contains('incorrect')
+                                                  ? Colors.amber.shade800
+                                                  : Colors.red.shade800,
+                                              isBold: true,
+                                              align: TextAlign.center,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                   if (_confidence > 0)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 8.0),
@@ -1402,7 +1773,9 @@ class _PracticeScreenState extends State<PracticeScreen>
                                   ? 'Completed! 🎉'
                                   : (_isListening
                                       ? 'Listening... Tap to stop'
-                                      : 'Practice Now! 🎤'),
+                                      : (_incorrectAttempts >= 3
+                                          ? 'Try again! You can do it! 💪'
+                                          : 'Practice Now! 🎤')),
                               fontSize: 24.0,
                               color: white,
                               isBold: true,

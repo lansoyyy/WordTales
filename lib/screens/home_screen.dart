@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:word_tales/screens/practice_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
+import 'package:word_tales/services/student_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,6 +23,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // Track completed levels (initially only level 1 is available)
   int _highestUnlockedLevel = 1;
 
+  // Student information
+  String? _studentId;
+  String? _studentName;
+  final StudentService _studentService = StudentService();
+
   // Track level completion with scores
   Map<int, Map<String, dynamic>> _levelCompletion = {
     1: {'completed': false, 'score': 0, 'totalItems': 5, 'date': null},
@@ -33,6 +40,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _loadStudentInfo();
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
@@ -59,6 +67,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _pulseAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+  }
+
+  // Load student information from SharedPreferences
+  Future<void> _loadStudentInfo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final studentName = prefs.getString('student_name');
+
+      if (studentName != null) {
+        final student = await _studentService.getStudentByName(
+          name: studentName,
+          teacherId: 'default_teacher',
+        );
+
+        if (mounted) {
+          setState(() {
+            _studentName = studentName;
+            _studentId = student?['id'];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading student info: $e');
+    }
   }
 
   @override
@@ -422,6 +454,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                                 levelTitle: level['title'],
                                                 levelDescription:
                                                     level['description'],
+                                                studentId: _studentId,
+                                                studentName: _studentName,
                                                 onLevelCompleted: () {
                                                   if (level['level'] ==
                                                       _highestUnlockedLevel) {
@@ -535,6 +569,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                       levelTitle: 'Level $levelNumber',
                                       levelDescription: levels[levelIndex]
                                           ['description'],
+                                      studentId: _studentId,
+                                      studentName: _studentName,
                                       onLevelCompletedWithScore:
                                           (score, totalItems) {
                                         _updateLevelCompletion(
