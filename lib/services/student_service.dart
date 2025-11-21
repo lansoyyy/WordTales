@@ -166,6 +166,37 @@ class StudentService {
     }
   }
 
+  Future<void> updateLevelPartialProgress({
+    required String studentId,
+    required int level,
+    required int score,
+    required int totalItems,
+    required int currentIndex,
+    required List<int> completedItems,
+    required List<int> failedItems,
+    required int incorrectAttempts,
+  }) async {
+    try {
+      await _firestore.collection(_studentsCollection).doc(studentId).update({
+        'levelProgress.$level': {
+          'completed': false,
+          'score': score,
+          'totalItems': totalItems,
+          'date': DateTime.now().toString().split(' ')[0],
+          'inProgress': {
+            'currentIndex': currentIndex,
+            'completedItems': completedItems,
+            'failedItems': failedItems,
+            'incorrectAttempts': incorrectAttempts,
+          },
+        }
+      });
+    } catch (e) {
+      print('Error updating partial level progress: $e');
+      rethrow;
+    }
+  }
+
   // Delete student (soft delete)
   Future<void> deleteStudent(String studentId) async {
     try {

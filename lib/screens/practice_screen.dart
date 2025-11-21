@@ -50,6 +50,7 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   // Track completed items and score
   Set<int> _completedItems = {};
+  Set<int> _failedItems = {};
   int _score = 0;
   int _totalItems = 0;
 
@@ -113,6 +114,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       CurvedAnimation(parent: _celebrationController, curve: Curves.bounceOut),
     );
 
+    _loadExistingProgress();
     _initSpeech();
   }
 
@@ -594,12 +596,18 @@ class _PracticeScreenState extends State<PracticeScreen>
 
     final target = practiceItems[_currentIndex]['content']!;
 
-    // Generate character-by-character feedback
+    // Always update character-by-character feedback for the latest speech
     _generateCharacterFeedback(target, _recognizedText);
+
+    // Only treat FINAL results as full attempts
+    if (!result.finalResult) {
+      return;
+    }
 
     if (_matchesTarget(target, _recognizedText)) {
       _stopListening();
-      if (!_completedItems.contains(_currentIndex)) {
+      if (!_completedItems.contains(_currentIndex) &&
+          !_failedItems.contains(_currentIndex)) {
         _markCurrentItemAsCompleted();
       }
     } else if (_recognizedText.isNotEmpty) {
@@ -614,6 +622,17 @@ class _PracticeScreenState extends State<PracticeScreen>
       } else {
         // Show incorrect feedback
         _showIncorrectFeedbackMessage();
+      }
+
+      // If this is the 3rd incorrect attempt for this item, mark it as failed
+      if (_incorrectAttempts >= 3 &&
+          !_completedItems.contains(_currentIndex) &&
+          !_failedItems.contains(_currentIndex)) {
+        _stopListening();
+        setState(() {
+          _failedItems.add(_currentIndex);
+        });
+        _checkLevelCompletion();
       }
     }
   }
@@ -844,6 +863,90 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
   }
 
+  Future<void> _savePartialProgress() async {
+    if (widget.isTeacher! || widget.studentId == null) return;
+
+    // If level is already finished, don't overwrite completed progress
+    if (_completedItems.length + _failedItems.length == practiceItems.length) {
+      return;
+    }
+
+    try {
+      await _studentService.updateLevelPartialProgress(
+        studentId: widget.studentId!,
+        level: widget.level!,
+        score: _score,
+        totalItems: _totalItems,
+        currentIndex: _currentIndex,
+        completedItems: _completedItems.toList(),
+        failedItems: _failedItems.toList(),
+        incorrectAttempts: _incorrectAttempts,
+      );
+    } catch (e) {
+      debugPrint('Error saving partial progress: $e');
+    }
+  }
+
+  Future<void> _loadExistingProgress() async {
+    if (widget.isTeacher! || widget.studentId == null || widget.level == null) {
+      return;
+    }
+
+    try {
+      final student = await _studentService.getStudent(widget.studentId!);
+      final levelProgress = student?['levelProgress'];
+      if (levelProgress == null) return;
+
+      final levelData = levelProgress['${widget.level}'];
+      if (levelData == null) return;
+
+      final bool completed = levelData['completed'] == true;
+      final int storedScore = (levelData['score'] ?? 0) as int;
+      final int storedTotal = (levelData['totalItems'] ?? _totalItems) as int;
+
+      if (!mounted) return;
+
+      setState(() {
+        _score = storedScore;
+        _totalItems = storedTotal;
+      });
+
+      if (!completed) {
+        final inProgress = levelData['inProgress'];
+        if (inProgress != null && inProgress is Map) {
+          final dynamic idx = inProgress['currentIndex'];
+          final dynamic completedItems = inProgress['completedItems'];
+          final dynamic failedItems = inProgress['failedItems'];
+          final dynamic incorrectAttempts = inProgress['incorrectAttempts'];
+
+          setState(() {
+            if (idx is int && idx >= 0 && idx < practiceItems.length) {
+              _currentIndex = idx;
+            }
+            if (completedItems is List) {
+              _completedItems =
+                  completedItems.map<int>((e) => (e as num).toInt()).toSet();
+            }
+            if (failedItems is List) {
+              _failedItems =
+                  failedItems.map<int>((e) => (e as num).toInt()).toSet();
+            }
+            _incorrectAttempts =
+                incorrectAttempts is int ? incorrectAttempts : 0;
+          });
+        }
+      } else {
+        // If level already completed, mark all items as completed locally
+        setState(() {
+          _completedItems =
+              Set<int>.from(List.generate(practiceItems.length, (i) => i));
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading existing progress: $e');
+    }
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
@@ -863,6 +966,9 @@ class _PracticeScreenState extends State<PracticeScreen>
       // Reset character feedback when moving to next item
       _characterFeedback = [];
       _showIncorrectFeedback = false;
+      _incorrectAttempts = 0;
+      _recognizedText = '';
+      _confidence = 0.0;
     });
     if (_isListening) {
       _stopListening();
@@ -871,21 +977,21 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   void _markCurrentItemAsCompleted() {
     setState(() {
+      _failedItems.remove(_currentIndex);
       _completedItems.add(_currentIndex);
-      _score += 10; // Add 10 points for each completed item
-      // Reset character feedback when item is completed
-      _characterFeedback = [];
+      _score += 1;
       _showIncorrectFeedback = false;
       _incorrectAttempts = 0;
-
-      // Check if all items are completed
-      if (_completedItems.length == practiceItems.length) {
-        // Save progress to Firestore when level is completed
-        _saveProgressToFirestore();
-        // Level completed!
-        _showLevelCompletedDialog();
-      }
     });
+    _checkLevelCompletion();
+  }
+
+  void _checkLevelCompletion() {
+    if (_completedItems.length + _failedItems.length ==
+        practiceItems.length) {
+      _saveProgressToFirestore();
+      _showLevelCompletedDialog();
+    }
   }
 
   void _showLevelCompletedDialog() {
@@ -1169,8 +1275,13 @@ class _PracticeScreenState extends State<PracticeScreen>
     final currentItem = practiceItems[_currentIndex];
     final isCurrentItemCompleted = _completedItems.contains(_currentIndex);
 
-    return Scaffold(
-      body: Container(
+    return WillPopScope(
+      onWillPop: () async {
+        await _savePartialProgress();
+        return true;
+      },
+      child: Scaffold(
+        body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
@@ -1217,7 +1328,8 @@ class _PracticeScreenState extends State<PracticeScreen>
                         child: IconButton(
                           icon:
                               Icon(Icons.arrow_back, color: white, size: 30.0),
-                          onPressed: () {
+                          onPressed: () async {
+                            await _savePartialProgress();
                             Navigator.pop(context);
                           },
                         ),
@@ -1463,12 +1575,8 @@ class _PracticeScreenState extends State<PracticeScreen>
                                                       'correct'
                                                   ? Colors.green
                                                       .withOpacity(0.3)
-                                                  : _characterFeedback[index] ==
-                                                          'incorrect'
-                                                      ? Colors.red
-                                                          .withOpacity(0.3)
-                                                      : Colors.grey
-                                                          .withOpacity(0.2))
+                                                  : Colors.red
+                                                      .withOpacity(0.3))
                                               : Colors.grey.withOpacity(0.2),
                                           borderRadius:
                                               BorderRadius.circular(8.0),
@@ -1478,11 +1586,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                                                 ? (_characterFeedback[index] ==
                                                         'correct'
                                                     ? Colors.green
-                                                    : _characterFeedback[
-                                                                index] ==
-                                                            'incorrect'
-                                                        ? Colors.red
-                                                        : Colors.grey)
+                                                    : Colors.red)
                                                 : Colors.grey,
                                             width: 2.0,
                                           ),
@@ -1495,10 +1599,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                                               ? (_characterFeedback[index] ==
                                                       'correct'
                                                   ? Colors.green
-                                                  : _characterFeedback[index] ==
-                                                          'incorrect'
-                                                      ? Colors.red
-                                                      : Colors.grey)
+                                                  : Colors.red)
                                               : primary,
                                           isBold: true,
                                           fontFamily: 'Regular',
@@ -1858,6 +1959,6 @@ class _PracticeScreenState extends State<PracticeScreen>
           ),
         ),
       ),
-    );
+    ));
   }
 }
