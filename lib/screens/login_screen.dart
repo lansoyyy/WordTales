@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:word_tales/screens/teacher.home_screen.dart';
 import 'package:word_tales/screens/reminder_screen.dart';
+import 'package:word_tales/screens/teacher_signup_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
 import 'package:word_tales/services/auth_service.dart';
@@ -341,6 +342,27 @@ class _LoginScreenState extends State<LoginScreen> {
                         isBold: true,
                       ),
               ),
+              if (_showTeacherLogin) ...[
+                const SizedBox(height: 8.0),
+                TextButton(
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const TeacherSignupScreen(),
+                            ),
+                          );
+                        },
+                  child: TextWidget(
+                    text: 'Create a new teacher account',
+                    fontSize: 14.0,
+                    color: primary,
+                    isItalize: true,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
