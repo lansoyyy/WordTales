@@ -53,6 +53,7 @@ class _PracticeScreenState extends State<PracticeScreen>
   Set<int> _failedItems = {};
   int _score = 0;
   int _totalItems = 0;
+  bool _isReviewMode = false;
 
   // Speech to Text state
   late stt.SpeechToText _speech;
@@ -595,16 +596,28 @@ class _PracticeScreenState extends State<PracticeScreen>
     });
 
     final target = practiceItems[_currentIndex]['content']!;
+    final type = practiceItems[_currentIndex]['type'];
 
     // Always update character-by-character feedback for the latest speech
     _generateCharacterFeedback(target, _recognizedText);
+
+    // For single-word items, allow early acceptance even on partial results
+    final isMatch = _matchesTarget(target, _recognizedText);
+    if (type == 'Word' && isMatch) {
+      _stopListening();
+      if (!_completedItems.contains(_currentIndex) &&
+          !_failedItems.contains(_currentIndex)) {
+        _markCurrentItemAsCompleted();
+      }
+      return;
+    }
 
     // Only treat FINAL results as full attempts
     if (!result.finalResult) {
       return;
     }
 
-    if (_matchesTarget(target, _recognizedText)) {
+    if (isMatch) {
       _stopListening();
       if (!_completedItems.contains(_currentIndex) &&
           !_failedItems.contains(_currentIndex)) {
@@ -657,11 +670,23 @@ class _PracticeScreenState extends State<PracticeScreen>
     });
   }
 
+  double _calculateAccuracyPercentage() {
+    if (_characterFeedback.isEmpty) return 0.0;
+    final int correctCount =
+        _characterFeedback.where((status) => status == 'correct').length;
+    return 100.0 * correctCount / _characterFeedback.length;
+  }
+
   void _showIncorrectFeedbackMessage() {
     setState(() {
       _incorrectAttempts++;
       _showIncorrectFeedback = true;
     });
+
+    // After 2 incorrect attempts, allow students to move to the next item via popup
+    if (!(widget.isTeacher ?? false) && _incorrectAttempts == 2) {
+      _showNextItemPopup();
+    }
 
     // Clear previous timer if exists
     _incorrectFeedbackTimer?.cancel();
@@ -808,12 +833,40 @@ class _PracticeScreenState extends State<PracticeScreen>
     final similarity =
         FilipinoPronunciationService.calculateFilipinoSimilarity(t, h);
 
-    debugPrint('Target: "$t", Hypothesis: "$h", Similarity: $similarity');
+    // Additional character-level check (ignoring spaces) for short words
+    final tChars = t.replaceAll(' ', '').split('');
+    final hChars = h.replaceAll(' ', '').split('');
+    int correctChars = 0;
+    int mismatchChars = 0;
+    for (int i = 0; i < tChars.length && i < hChars.length; i++) {
+      if (tChars[i] == hChars[i]) {
+        correctChars++;
+      } else {
+        mismatchChars++;
+      }
+    }
+    final double charMatchRatio =
+        tChars.isNotEmpty ? correctChars / tChars.length : 0.0;
+    final bool hasExactCharPrefix =
+        tChars.isNotEmpty && mismatchChars == 0 && hChars.length >= tChars.length;
+
+    debugPrint(
+        'Target: "$t", Hypothesis: "$h", Similarity: $similarity, CharMatch: $charMatchRatio, ExactPrefix: $hasExactCharPrefix');
 
     final type = practiceItems[_currentIndex]['type'];
     if (type == 'Word') {
       // For words, use a lower threshold due to Filipino pronunciation variations
-      return similarity >= 0.7 || t == h || h.split(' ').contains(t);
+      // and make it slightly more forgiving after several incorrect attempts.
+      double wordThreshold = 0.7;
+      if (_incorrectAttempts >= 2) {
+        wordThreshold = 0.6;
+      }
+
+      return similarity >= wordThreshold ||
+          t == h ||
+          h.split(' ').contains(t) ||
+          // If all characters match in order as a prefix (e.g., "ACT" vs "A C T" or "ARE" vs "ARE YOU OKAY"), accept as correct
+          hasExactCharPrefix;
     } else {
       // For sentences, use a moderate threshold
       return similarity >= 0.75 ||
@@ -832,6 +885,8 @@ class _PracticeScreenState extends State<PracticeScreen>
         level: widget.level!,
         score: _score,
         totalItems: _totalItems,
+        completedItems: _completedItems.toList(),
+        failedItems: _failedItems.toList(),
       );
 
       if (mounted) {
@@ -864,7 +919,7 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   Future<void> _savePartialProgress() async {
-    if (widget.isTeacher! || widget.studentId == null) return;
+    if (widget.isTeacher! || widget.studentId == null || _isReviewMode) return;
 
     // If level is already finished, don't overwrite completed progress
     if (_completedItems.length + _failedItems.length == practiceItems.length) {
@@ -936,11 +991,38 @@ class _PracticeScreenState extends State<PracticeScreen>
           });
         }
       } else {
-        // If level already completed, mark all items as completed locally
-        setState(() {
-          _completedItems =
-              Set<int>.from(List.generate(practiceItems.length, (i) => i));
-        });
+        // If level already completed, try to restore per-item results
+        final results = levelData['results'];
+        if (results != null && results is Map) {
+          final dynamic completedItems = results['completedItems'];
+          final dynamic failedItems = results['failedItems'];
+
+          setState(() {
+            _isReviewMode = true;
+
+            if (completedItems is List) {
+              _completedItems = completedItems
+                  .map<int>((e) => (e as num).toInt())
+                  .toSet();
+            } else {
+              _completedItems =
+                  Set<int>.from(List.generate(practiceItems.length, (i) => i));
+            }
+
+            if (failedItems is List) {
+              _failedItems = failedItems
+                  .map<int>((e) => (e as num).toInt())
+                  .toSet();
+            }
+          });
+        } else {
+          // Backwards compatibility: if no detailed results, mark all as completed
+          setState(() {
+            _isReviewMode = true;
+            _completedItems =
+                Set<int>.from(List.generate(practiceItems.length, (i) => i));
+          });
+        }
       }
     } catch (e) {
       debugPrint('Error loading existing progress: $e');
@@ -984,6 +1066,12 @@ class _PracticeScreenState extends State<PracticeScreen>
       _incorrectAttempts = 0;
     });
     _checkLevelCompletion();
+
+    // For students, show a Next Item pop-up if there are more items
+    if (!(widget.isTeacher ?? false) &&
+        _completedItems.length < practiceItems.length) {
+      _showNextItemPopup();
+    }
   }
 
   void _checkLevelCompletion() {
@@ -992,6 +1080,74 @@ class _PracticeScreenState extends State<PracticeScreen>
       _saveProgressToFirestore();
       _showLevelCompletedDialog();
     }
+  }
+
+  void _showNextItemPopup() {
+    if (!(mounted)) return;
+    if (widget.isTeacher ?? false) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24.0),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextWidget(
+                  text: 'Great job practicing! 🎉',
+                  fontSize: 20.0,
+                  color: primary,
+                  isBold: true,
+                  fontFamily: 'Regular',
+                  align: TextAlign.center,
+                ),
+                const SizedBox(height: 12.0),
+                TextWidget(
+                  text: 'Tap NEXT to continue to the next item.',
+                  fontSize: 16.0,
+                  color: black,
+                  fontFamily: 'Regular',
+                  align: TextAlign.center,
+                ),
+                const SizedBox(height: 20.0),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _nextItem();
+                    },
+                    icon: const Icon(Icons.arrow_forward, color: Colors.white),
+                    label: TextWidget(
+                      text: 'Next Item ➡️',
+                      fontSize: 18.0,
+                      color: Colors.white,
+                      isBold: true,
+                      fontFamily: 'Regular',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: secondary,
+                      foregroundColor: white,
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 14.0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16.0),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _showLevelCompletedDialog() {
@@ -1274,6 +1430,10 @@ class _PracticeScreenState extends State<PracticeScreen>
   Widget build(BuildContext context) {
     final currentItem = practiceItems[_currentIndex];
     final isCurrentItemCompleted = _completedItems.contains(_currentIndex);
+    final bool isTeacherMode = widget.isTeacher ?? false;
+    final bool canGoNext = isTeacherMode ||
+        isCurrentItemCompleted ||
+        (!isTeacherMode && _incorrectAttempts >= 2);
 
     return WillPopScope(
       onWillPop: () async {
@@ -1555,6 +1715,60 @@ class _PracticeScreenState extends State<PracticeScreen>
                                     align: TextAlign.center,
                                     fontFamily: 'Regular',
                                   )
+                                else if (currentItem['type'] == 'Sentence')
+                                  Wrap(
+                                    alignment: WrapAlignment.center,
+                                    runSpacing: 4.0,
+                                    children: List.generate(
+                                      currentItem['content']!.length,
+                                      (index) => Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 4.0,
+                                          vertical: 4.0,
+                                        ),
+                                        margin: const EdgeInsets.symmetric(
+                                          horizontal: 1.0,
+                                          vertical: 2.0,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: index <
+                                                  _characterFeedback.length
+                                              ? (_characterFeedback[index] ==
+                                                      'correct'
+                                                  ? Colors.green
+                                                      .withOpacity(0.3)
+                                                  : Colors.red
+                                                      .withOpacity(0.3))
+                                              : Colors.grey.withOpacity(0.2),
+                                          borderRadius:
+                                              BorderRadius.circular(6.0),
+                                          border: Border.all(
+                                            color: index <
+                                                    _characterFeedback.length
+                                                ? (_characterFeedback[index] ==
+                                                        'correct'
+                                                    ? Colors.green
+                                                    : Colors.red)
+                                                : Colors.grey,
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                        child: TextWidget(
+                                          text: currentItem['content']![index],
+                                          fontSize: 30.0,
+                                          color: index <
+                                                  _characterFeedback.length
+                                              ? (_characterFeedback[index] ==
+                                                      'correct'
+                                                  ? Colors.green
+                                                  : Colors.red)
+                                              : primary,
+                                          isBold: true,
+                                          fontFamily: 'Regular',
+                                        ),
+                                      ),
+                                    ),
+                                  )
                                 else
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1746,15 +1960,15 @@ class _PracticeScreenState extends State<PracticeScreen>
                                       ),
                                     ],
                                   ),
-                                  if (_recognizedText.isNotEmpty) ...[
-                                    const SizedBox(height: 12.0),
-                                    TextWidget(
-                                      text: 'Heard: ' + _recognizedText,
-                                      fontSize: 18.0,
-                                      color: black,
-                                      fontFamily: 'Regular',
-                                    ),
-                                  ],
+                                  const SizedBox(height: 12.0),
+                                  TextWidget(
+                                    text: _recognizedText.isNotEmpty
+                                        ? 'Heard: ' + _recognizedText
+                                        : 'Heard:',
+                                    fontSize: 18.0,
+                                    color: black,
+                                    fontFamily: 'Regular',
+                                  ),
 
                                   // Incorrect pronunciation feedback
                                   if (_showIncorrectFeedback) ...[
@@ -1831,12 +2045,12 @@ class _PracticeScreenState extends State<PracticeScreen>
                                       ),
                                     ),
                                   ],
-                                  if (_confidence > 0)
+                                  if (_characterFeedback.isNotEmpty)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 8.0),
                                       child: TextWidget(
-                                        text: 'Confidence: ' +
-                                            (100 * _confidence)
+                                        text: 'Accuracy: ' +
+                                            _calculateAccuracyPercentage()
                                                 .toStringAsFixed(0) +
                                             '%',
                                         fontSize: 14.0,
@@ -1899,25 +2113,29 @@ class _PracticeScreenState extends State<PracticeScreen>
                       ),
                       const SizedBox(height: 20.0),
 
-                      // Next Button with enhanced design
-                      OutlinedButton.icon(
-                        onPressed: _nextItem,
-                        icon: Icon(Icons.arrow_forward,
-                            color: secondary, size: 32.0),
-                        label: TextWidget(
-                          text: 'Next Item ➡️',
-                          fontSize: 24.0,
-                          color: secondary,
-                          isBold: true,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: secondary,
-                          side: BorderSide(color: secondary, width: 3.0),
-                          minimumSize: const Size(double.infinity, 80.0),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20.0),
+                      // Next Button with enhanced design (teachers only)
+                      Visibility(
+                        visible: widget.isTeacher ?? false,
+                        child: OutlinedButton.icon(
+                          onPressed: _nextItem,
+                          icon: Icon(Icons.arrow_forward,
+                              color: secondary, size: 32.0),
+                          label: TextWidget(
+                            text: 'Next Item ➡️',
+                            fontSize: 24.0,
+                            color: secondary,
+                            isBold: true,
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 16.0),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: secondary,
+                            side: BorderSide(color: secondary, width: 3.0),
+                            minimumSize: const Size(double.infinity, 80.0),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20.0),
+                            ),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 16.0),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 24.0),

@@ -81,10 +81,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           teacherId: 'default_teacher',
         );
 
-        if (mounted) {
+        if (mounted && student != null) {
+          final levelProgress = student['levelProgress'] as Map<String, dynamic>?;
+
+          // Start from defaults and then apply any saved progress
+          Map<int, Map<String, dynamic>> updatedLevelCompletion =
+              Map<int, Map<String, dynamic>>.from(_levelCompletion);
+          int highestUnlocked = 1;
+
+          if (levelProgress != null) {
+            levelProgress.forEach((key, value) {
+              final int? levelNumber = int.tryParse(key);
+              if (levelNumber == null || levelNumber < 1 || levelNumber > 5) {
+                return;
+              }
+              if (value is! Map) return;
+
+              final completed = value['completed'] == true;
+              final score = (value['score'] ?? 0) as int;
+              final totalItems = (value['totalItems'] ??
+                      (updatedLevelCompletion[levelNumber]?['totalItems'] ??
+                          0))
+                  as int;
+              final date = value['date'];
+
+              updatedLevelCompletion[levelNumber] = {
+                'completed': completed,
+                'score': score,
+                'totalItems': totalItems,
+                'date': date,
+              };
+
+              if (completed) {
+                // Unlock next level if within range, keep last level as 5
+                final nextLevel = levelNumber == 5 ? 5 : levelNumber + 1;
+                if (nextLevel > highestUnlocked) {
+                  highestUnlocked = nextLevel;
+                }
+              }
+            });
+          }
+
           setState(() {
             _studentName = studentName;
-            _studentId = student?['id'];
+            _studentId = student['id'];
+            _levelCompletion = updatedLevelCompletion;
+            _highestUnlockedLevel = highestUnlocked;
+          });
+        } else if (mounted) {
+          // Student record not found, but keep name from preferences
+          setState(() {
+            _studentName = studentName;
           });
         }
       }

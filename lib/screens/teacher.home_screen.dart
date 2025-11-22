@@ -28,7 +28,31 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
   final StudentService _studentService = StudentService();
   List<Map<String, dynamic>> _students = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
+
+  Color _getPerformanceColor(double percentage) {
+    if (percentage >= 97.0) {
+      return Colors.green;
+    } else if (percentage >= 90.0) {
+      return Colors.orange;
+    } else {
+      return Colors.red;
+    }
+  }
+
+  int _getPerformanceBandOrder(double? percentage, bool isCompleted) {
+    // Lower value = higher priority in sorting
+    if (!isCompleted || percentage == null) {
+      return 3; // Not started / no score
+    }
+    if (percentage <= 89.0) {
+      return 0; // Frustration (red)
+    } else if (percentage <= 96.0) {
+      return 1; // Instructional (orange)
+    } else {
+      return 2; // Independent (green)
+    }
+  }
 
   // Level data with descriptions and content
   final List<Map<String, dynamic>> levels = [
@@ -848,6 +872,45 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     final level = levels[levelIndex];
     final levelStats = getLevelStats(level['level']);
 
+    // Build a locally sorted copy of students by performance band for this level
+    final List<Map<String, dynamic>> sortedStudents = List.from(_students);
+    sortedStudents.sort((a, b) {
+      final aLevelData = a['levelProgress'][level['level']];
+      final bLevelData = b['levelProgress'][level['level']];
+
+      final bool aCompleted =
+          aLevelData != null && (aLevelData['completed'] == true);
+      final bool bCompleted =
+          bLevelData != null && (bLevelData['completed'] == true);
+
+      final double? aPercent = aCompleted
+          ? ((aLevelData['totalItems'] ?? 0) > 0
+              ? (aLevelData['score'] ?? 0) * 100.0 /
+                  (aLevelData['totalItems'] ?? 1)
+              : null)
+          : null;
+      final double? bPercent = bCompleted
+          ? ((bLevelData['totalItems'] ?? 0) > 0
+              ? (bLevelData['score'] ?? 0) * 100.0 /
+                  (bLevelData['totalItems'] ?? 1)
+              : null)
+          : null;
+
+      final int aBand = _getPerformanceBandOrder(aPercent, aCompleted);
+      final int bBand = _getPerformanceBandOrder(bPercent, bCompleted);
+
+      if (aBand != bBand) {
+        return aBand.compareTo(bBand);
+      }
+
+      // Within same band, sort by percentage descending, then name
+      if ((aPercent ?? -1) != (bPercent ?? -1)) {
+        return (bPercent ?? -1).compareTo(aPercent ?? -1);
+      }
+
+      return (a['name'] as String).compareTo(b['name'] as String);
+    });
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -986,12 +1049,20 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
               // Student list
               Expanded(
                 child: ListView.builder(
-                  itemCount: _students.length,
+                  itemCount: sortedStudents.length,
                   itemBuilder: (context, index) {
-                    final student = _students[index];
+                    final student = sortedStudents[index];
                     final levelData = student['levelProgress'][level['level']];
                     final isCompleted =
                         levelData != null && levelData['completed'];
+
+                    double? percentage;
+                    Color? performanceColor;
+                    if (isCompleted && (levelData['totalItems'] ?? 0) > 0) {
+                      percentage = (levelData['score'] ?? 0) * 100.0 /
+                          (levelData['totalItems'] ?? 1);
+                      performanceColor = _getPerformanceColor(percentage!);
+                    }
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8.0),
@@ -1036,10 +1107,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                 if (isCompleted) ...[
                                   const SizedBox(height: 4.0),
                                   TextWidget(
-                                    text:
-                                        'Score: ${levelData['score']}/${levelData['totalItems']} • ${levelData['date']}',
+                                    text: percentage != null
+                                        ? 'Score: ${levelData['score']}/${levelData['totalItems']} (${percentage.toStringAsFixed(0)}%) • ${levelData['date']}'
+                                        : 'Score: ${levelData['score']}/${levelData['totalItems']} • ${levelData['date']}',
                                     fontSize: 14.0,
-                                    color: grey,
+                                    color: performanceColor ?? grey,
                                   ),
                                 ] else ...[
                                   const SizedBox(height: 4.0),

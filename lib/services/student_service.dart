@@ -144,12 +144,14 @@ class StudentService {
     }
   }
 
-  // Update student level progress
+  // Update student level progress (completed level)
   Future<void> updateLevelProgress({
     required String studentId,
     required int level,
     required int score,
     required int totalItems,
+    List<int>? completedItems,
+    List<int>? failedItems,
   }) async {
     try {
       await _firestore.collection(_studentsCollection).doc(studentId).update({
@@ -158,6 +160,11 @@ class StudentService {
           'score': score,
           'totalItems': totalItems,
           'date': DateTime.now().toString().split(' ')[0],
+          if (completedItems != null || failedItems != null)
+            'results': {
+              'completedItems': completedItems ?? <int>[],
+              'failedItems': failedItems ?? <int>[],
+            },
         }
       });
     } catch (e) {
