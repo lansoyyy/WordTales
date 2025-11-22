@@ -559,7 +559,10 @@ class _PracticeScreenState extends State<PracticeScreen>
     await _speech.listen(
       onResult: _onSpeechResult,
       partialResults: true,
-      listenMode: stt.ListenMode.dictation,
+      // Use confirmation mode and shorter timeouts for clearer short-word capture
+      listenMode: stt.ListenMode.confirmation,
+      listenFor: const Duration(seconds: 8),
+      pauseFor: const Duration(seconds: 2),
       localeId: _selectedLocaleId,
       onSoundLevelChange: (level) {
         if (!mounted) return;
