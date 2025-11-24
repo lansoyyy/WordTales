@@ -8,6 +8,7 @@ import 'package:word_tales/services/filipino_pronunciation_service.dart';
 import 'package:word_tales/utils/words.dart';
 import 'package:word_tales/services/student_service.dart';
 import 'package:word_tales/services/auth_service.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'dart:async';
 
 class PracticeScreen extends StatefulWidget {
@@ -72,6 +73,8 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   // Services
   final StudentService _studentService = StudentService();
+  final FlutterTts _flutterTts = FlutterTts();
+  bool _hasListenedCurrentItem = false;
 
   @override
   void initState() {
@@ -117,6 +120,17 @@ class _PracticeScreenState extends State<PracticeScreen>
 
     _loadExistingProgress();
     _initSpeech();
+    _initTts();
+  }
+
+  Future<void> _initTts() async {
+    try {
+      await _flutterTts.setLanguage('en-US');
+      await _flutterTts.setSpeechRate(0.4);
+      await _flutterTts.setPitch(1.0);
+    } catch (e) {
+      debugPrint('Error initializing TTS: $e');
+    }
   }
 
   void _initializePracticeItems() {
@@ -584,6 +598,19 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   void _toggleListening() {
+    // Students must listen to the word first before practicing
+    if (!(widget.isTeacher ?? false) && !_hasListenedCurrentItem) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please tap Listen to hear the word first.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
     if (_isListening) {
       _stopListening();
     } else {
@@ -858,8 +885,23 @@ class _PracticeScreenState extends State<PracticeScreen>
 
     final type = practiceItems[_currentIndex]['type'];
     if (type == 'Word') {
-      // For words, use a lower threshold due to Filipino pronunciation variations
-      // and make it slightly more forgiving after several incorrect attempts.
+      // Special handling for very short words (single letters in Level 1)
+      final bool isSingleLetter = t.replaceAll(' ', '').length == 1;
+      if (isSingleLetter) {
+        // Be more forgiving for single letters like A, B, C where STT often
+        // returns the letter name ("see" for C, etc.).
+        double letterThreshold = 0.5;
+        if (_incorrectAttempts >= 1) {
+          letterThreshold = 0.4;
+        }
+        return similarity >= letterThreshold ||
+            t == h ||
+            h.split(' ').contains(t) ||
+            hasExactCharPrefix;
+      }
+
+      // For normal words, use a moderate threshold and relax slightly
+      // after several incorrect attempts.
       double wordThreshold = 0.7;
       if (_incorrectAttempts >= 2) {
         wordThreshold = 0.6;
@@ -1039,6 +1081,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     _pulseController.dispose();
     _celebrationController.dispose();
     _incorrectFeedbackTimer?.cancel();
+    _flutterTts.stop();
     if (_isListening) {
       _speech.stop();
     }
@@ -1047,16 +1090,52 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   void _nextItem() {
     setState(() {
+      // If the current item hasn't been marked correct or failed yet,
+      // treat it as failed so the level can still be finished.
+      if (!_completedItems.contains(_currentIndex) &&
+          !_failedItems.contains(_currentIndex)) {
+        _failedItems.add(_currentIndex);
+      }
+
       _currentIndex = (_currentIndex + 1) % practiceItems.length;
-      // Reset character feedback when moving to next item
+
+      // Reset state for the next item
       _characterFeedback = [];
       _showIncorrectFeedback = false;
       _incorrectAttempts = 0;
       _recognizedText = '';
       _confidence = 0.0;
+      _hasListenedCurrentItem = false;
     });
+
+    // Stop listening if still active
     if (_isListening) {
       _stopListening();
+    }
+
+    // After potentially marking a failed item, re-check if the level is done
+    _checkLevelCompletion();
+  }
+
+  Future<void> _listenCurrentItem() async {
+    final current = practiceItems[_currentIndex];
+    final text = current['content'];
+    if (text == null || text.isEmpty) return;
+
+    if (_isListening) {
+      await _stopListening();
+    }
+
+    try {
+      await _flutterTts.stop();
+      await _flutterTts.speak(text);
+      if (mounted) {
+        setState(() {
+          _hasListenedCurrentItem = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error during TTS speak: $e');
     }
   }
 
@@ -1923,147 +2002,169 @@ class _PracticeScreenState extends State<PracticeScreen>
                             ),
                           ],
                         ),
-                        child: widget.isTeacher!
-                            ? TextWidget(
-                                text: 'Result:',
-                                fontSize: 18,
-                                fontFamily: 'Bold',
-                              )
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      AnimatedBuilder(
-                                        animation: _pulseAnimation,
-                                        builder: (context, child) {
-                                          return Transform.scale(
-                                            scale: _isListening
-                                                ? _pulseAnimation.value
-                                                : 1.0,
-                                            child: Icon(
-                                              _isListening
-                                                  ? Icons.hearing
-                                                  : Icons.mic,
-                                              color: primary,
-                                              size: 32.0,
-                                            ),
-                                          );
-                                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                AnimatedBuilder(
+                                  animation: _pulseAnimation,
+                                  builder: (context, child) {
+                                    return Transform.scale(
+                                      scale: _isListening
+                                          ? _pulseAnimation.value
+                                          : 1.0,
+                                      child: Icon(
+                                        _isListening
+                                            ? Icons.hearing
+                                            : Icons.mic,
+                                        color: primary,
+                                        size: 32.0,
                                       ),
-                                      const SizedBox(width: 12.0),
-                                      TextWidget(
-                                        text: _isListening
-                                            ? 'Listening... 🧏'
-                                            : 'Tap Practice to speak 🗣️',
-                                        fontSize: 22.0,
-                                        color: black,
-                                        isBold: true,
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12.0),
-                                  TextWidget(
-                                    text: _recognizedText.isNotEmpty
-                                        ? 'Heard: ' + _recognizedText
-                                        : 'Heard:',
-                                    fontSize: 18.0,
-                                    color: black,
-                                    fontFamily: 'Regular',
-                                  ),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: 12.0),
+                                TextWidget(
+                                  text: _isListening
+                                      ? 'Listening... 🧏'
+                                      : 'Tap Practice to speak 🗣️',
+                                  fontSize: 22.0,
+                                  color: black,
+                                  isBold: true,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12.0),
+                            TextWidget(
+                              text: _recognizedText.isNotEmpty
+                                  ? 'Heard: ' + _recognizedText
+                                  : 'Heard:',
+                              fontSize: 18.0,
+                              color: black,
+                              fontFamily: 'Regular',
+                            ),
 
-                                  // Incorrect pronunciation feedback
-                                  if (_showIncorrectFeedback) ...[
-                                    const SizedBox(height: 12.0),
-                                    Container(
-                                      padding: const EdgeInsets.all(12.0),
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: _characterFeedback
-                                                      .contains('correct') &&
-                                                  _characterFeedback
-                                                      .contains('incorrect')
-                                              ? [
-                                                  Colors.amber.shade100,
-                                                  Colors.yellow.shade100,
-                                                ]
-                                              : [
-                                                  Colors.red.shade100,
-                                                  Colors.orange.shade100,
-                                                ],
-                                        ),
-                                        borderRadius:
-                                            BorderRadius.circular(12.0),
-                                        border: Border.all(
-                                          color: _characterFeedback
-                                                      .contains('correct') &&
-                                                  _characterFeedback
-                                                      .contains('incorrect')
-                                              ? Colors.amber.shade300
-                                              : Colors.red.shade300,
-                                          width: 2.0,
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
+                            // Incorrect pronunciation feedback
+                            if (_showIncorrectFeedback) ...[
+                              const SizedBox(height: 12.0),
+                              Container(
+                                padding: const EdgeInsets.all(12.0),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: _characterFeedback
+                                                .contains('correct') &&
                                             _characterFeedback
-                                                        .contains('correct') &&
-                                                    _characterFeedback
-                                                        .contains('incorrect')
-                                                ? Icons.lightbulb_outline
-                                                : Icons.error_outline,
-                                            color: _characterFeedback
-                                                        .contains('correct') &&
-                                                    _characterFeedback
-                                                        .contains('incorrect')
-                                                ? Colors.amber.shade600
-                                                : Colors.red.shade600,
-                                            size: 24.0,
-                                          ),
-                                          const SizedBox(width: 8.0),
-                                          Flexible(
-                                            child: TextWidget(
-                                              text: _characterFeedback.contains(
-                                                          'correct') &&
-                                                      _characterFeedback
-                                                          .contains('incorrect')
-                                                  ? _getMixedFeedbackMessage()
-                                                  : _getEncouragingMessage(),
-                                              fontSize: 16.0,
-                                              color: _characterFeedback
-                                                          .contains(
-                                                              'correct') &&
-                                                      _characterFeedback
-                                                          .contains('incorrect')
-                                                  ? Colors.amber.shade800
-                                                  : Colors.red.shade800,
-                                              isBold: true,
-                                              align: TextAlign.center,
-                                            ),
-                                          ),
-                                        ],
+                                                .contains('incorrect')
+                                        ? [
+                                            Colors.amber.shade100,
+                                            Colors.yellow.shade100,
+                                          ]
+                                        : [
+                                            Colors.red.shade100,
+                                            Colors.orange.shade100,
+                                          ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(12.0),
+                                  border: Border.all(
+                                    color: _characterFeedback
+                                                .contains('correct') &&
+                                            _characterFeedback
+                                                .contains('incorrect')
+                                        ? Colors.amber.shade300
+                                        : Colors.red.shade300,
+                                    width: 2.0,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _characterFeedback.contains('correct') &&
+                                              _characterFeedback
+                                                  .contains('incorrect')
+                                          ? Icons.lightbulb_outline
+                                          : Icons.error_outline,
+                                      color: _characterFeedback.contains(
+                                                  'correct') &&
+                                              _characterFeedback
+                                                  .contains('incorrect')
+                                          ? Colors.amber.shade600
+                                          : Colors.red.shade600,
+                                      size: 24.0,
+                                    ),
+                                    const SizedBox(width: 8.0),
+                                    Flexible(
+                                      child: TextWidget(
+                                        text: _characterFeedback.contains(
+                                                    'correct') &&
+                                                _characterFeedback
+                                                    .contains('incorrect')
+                                            ? _getMixedFeedbackMessage()
+                                            : _getEncouragingMessage(),
+                                        fontSize: 16.0,
+                                        color: _characterFeedback.contains(
+                                                    'correct') &&
+                                                _characterFeedback
+                                                    .contains('incorrect')
+                                            ? Colors.amber.shade800
+                                            : Colors.red.shade800,
+                                        isBold: true,
+                                        align: TextAlign.center,
                                       ),
                                     ),
                                   ],
-                                  if (_characterFeedback.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8.0),
-                                      child: TextWidget(
-                                        text: 'Accuracy: ' +
-                                            _calculateAccuracyPercentage()
-                                                .toStringAsFixed(0) +
-                                            '%',
-                                        fontSize: 14.0,
-                                        color: grey,
-                                      ),
-                                    ),
-                                ],
+                                ),
                               ),
+                            ],
+                            if (_characterFeedback.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: TextWidget(
+                                  text: 'Accuracy: ' +
+                                      _calculateAccuracyPercentage()
+                                          .toStringAsFixed(0) +
+                                      '%',
+                                  fontSize: 14.0,
+                                  color: grey,
+                                  align: TextAlign.center,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 40.0),
+
+                      // Listen button (student must listen before practicing)
+                      Visibility(
+                        visible: !(widget.isTeacher ?? false),
+                        child: Column(
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: _listenCurrentItem,
+                              icon: Icon(Icons.volume_up,
+                                  color: primary, size: 28.0),
+                              label: TextWidget(
+                                text: 'Listen to the word ',
+                                fontSize: 18.0,
+                                color: white,
+                                isBold: true,
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: secondary,
+                                foregroundColor: white,
+                                minimumSize:
+                                    const Size(double.infinity, 56.0),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16.0),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16.0),
+                          ],
+                        ),
+                      ),
 
                       // Practice Button with enhanced animation
                       Visibility(
@@ -2071,7 +2172,8 @@ class _PracticeScreenState extends State<PracticeScreen>
                         child: ScaleTransition(
                           scale: _scaleAnimation,
                           child: ElevatedButton.icon(
-                            onPressed: isCurrentItemCompleted
+                            onPressed: (isCurrentItemCompleted ||
+                                    !_hasListenedCurrentItem)
                                 ? null
                                 : () {
                                     if (_isListening) {
@@ -2083,17 +2185,21 @@ class _PracticeScreenState extends State<PracticeScreen>
                             icon: Icon(
                                 isCurrentItemCompleted
                                     ? Icons.check
-                                    : (_isListening ? Icons.stop : Icons.mic),
+                                    : (_isListening
+                                        ? Icons.stop
+                                        : Icons.mic),
                                 color: white,
                                 size: 32.0),
                             label: TextWidget(
                               text: isCurrentItemCompleted
-                                  ? 'Completed! 🎉'
-                                  : (_isListening
-                                      ? 'Listening... Tap to stop'
-                                      : (_incorrectAttempts >= 3
-                                          ? 'Try again! You can do it! 💪'
-                                          : 'Practice Now! 🎤')),
+                                  ? 'Completed! '
+                                  : (!_hasListenedCurrentItem
+                                      ? 'Tap Listen first '
+                                      : (_isListening
+                                          ? 'Listening... Tap to stop'
+                                          : (_incorrectAttempts >= 3
+                                              ? 'Try again! You can do it! '
+                                              : 'Practice Now! '))),
                               fontSize: 24.0,
                               color: white,
                               isBold: true,
@@ -2101,7 +2207,9 @@ class _PracticeScreenState extends State<PracticeScreen>
                             style: ElevatedButton.styleFrom(
                               backgroundColor: isCurrentItemCompleted
                                   ? Colors.green
-                                  : primary,
+                                  : (_hasListenedCurrentItem
+                                      ? primary
+                                      : primary.withOpacity(0.6)),
                               foregroundColor: white,
                               minimumSize: const Size(double.infinity, 80.0),
                               shape: RoundedRectangleBorder(

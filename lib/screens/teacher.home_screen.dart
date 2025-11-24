@@ -540,26 +540,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 16.0),
-              Row(
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: () => _addItemToLevel(levelIndex),
-                    icon: Icon(Icons.add, color: white, size: 20.0),
-                    label: TextWidget(
-                      text: 'Add Item',
-                      fontSize: 16.0,
-                      color: white,
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: levels[levelIndex]['color'],
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8.0),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+             
               const SizedBox(height: 16.0),
               Expanded(
                 child: ListView.builder(
@@ -875,8 +856,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     // Build a locally sorted copy of students by performance band for this level
     final List<Map<String, dynamic>> sortedStudents = List.from(_students);
     sortedStudents.sort((a, b) {
-      final aLevelData = a['levelProgress'][level['level']];
-      final bLevelData = b['levelProgress'][level['level']];
+      final dynamic aLevelProgress = a['levelProgress'];
+      final dynamic bLevelProgress = b['levelProgress'];
+
+      final dynamic aLevelData = aLevelProgress is Map
+          ? (aLevelProgress[level['level']] ?? aLevelProgress['${level['level']}'])
+          : null;
+      final dynamic bLevelData = bLevelProgress is Map
+          ? (bLevelProgress[level['level']] ?? bLevelProgress['${level['level']}'])
+          : null;
 
       final bool aCompleted =
           aLevelData != null && (aLevelData['completed'] == true);
@@ -1052,9 +1040,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                   itemCount: sortedStudents.length,
                   itemBuilder: (context, index) {
                     final student = sortedStudents[index];
-                    final levelData = student['levelProgress'][level['level']];
-                    final isCompleted =
-                        levelData != null && levelData['completed'];
+                    final dynamic levelProgress = student['levelProgress'];
+                    final dynamic levelData = levelProgress is Map
+                        ? (levelProgress[level['level']] ??
+                            levelProgress['${level['level']}'])
+                        : null;
+                    final bool isCompleted =
+                        levelData != null && levelData['completed'] == true;
 
                     double? percentage;
                     Color? performanceColor;
@@ -1215,13 +1207,26 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Calculate summary stats
-    int totalStudents = _students.length;
-    int totalCompletedLevels = _students.fold(0, (sum, student) {
-      return sum + 5;
-    });
-    double averageAccuracy = _students.isNotEmpty
-        ? (totalCompletedLevels * 100.0) / (_students.length * 5)
+    // Calculate summary stats based on actual completed levels
+    final int totalStudents = _students.length;
+    int completedLevels = 0;
+    final int totalLevelSlots = totalStudents * levels.length;
+
+    for (final student in _students) {
+      final dynamic levelProgress = student['levelProgress'];
+      if (levelProgress is Map) {
+        for (int levelNumber = 1; levelNumber <= levels.length; levelNumber++) {
+          final dynamic levelData =
+              levelProgress[levelNumber] ?? levelProgress['$levelNumber'];
+          if (levelData is Map && levelData['completed'] == true) {
+            completedLevels++;
+          }
+        }
+      }
+    }
+
+    final double averageAccuracy = totalLevelSlots > 0
+        ? (completedLevels * 100.0) / totalLevelSlots
         : 0.0;
 
     return Scaffold(
@@ -1317,7 +1322,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                     Column(
                       children: [
                         TextWidget(
-                          text: '$totalCompletedLevels',
+                          text: '$completedLevels',
                           fontSize: 24.0,
                           color: primary,
                           isBold: true,
@@ -1544,145 +1549,178 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                       ),
                     )
                   : ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: filteredStudents.length,
-                itemBuilder: (context, index) {
-                  final student = filteredStudents[index];
-                  final completedLevels = 1;
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: filteredStudents.length,
+                      itemBuilder: (context, index) {
+                        final student = filteredStudents[index];
+                        int completedLevels = 0;
+                        final dynamic levelProgress = student['levelProgress'];
+                        if (levelProgress is Map) {
+                          for (int levelNumber = 1;
+                              levelNumber <= levels.length;
+                              levelNumber++) {
+                            final dynamic levelData =
+                                levelProgress[levelNumber] ??
+                                    levelProgress['$levelNumber'];
+                            if (levelData is Map &&
+                                levelData['completed'] == true) {
+                              completedLevels++;
+                            }
+                          }
+                        }
 
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 16.0),
-                    decoration: BoxDecoration(
-                      color: white,
-                      borderRadius: BorderRadius.circular(16.0),
-                      border: Border.all(color: secondary, width: 2.0),
-                      boxShadow: [
-                        BoxShadow(
-                          color: grey.withOpacity(0.3),
-                          blurRadius: 8.0,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: ExpansionTile(
-                      leading: CircleAvatar(
-                        backgroundColor: primary,
-                        child: TextWidget(
-                          text: student['name'][0],
-                          fontSize: 18.0,
-                          color: white,
-                          isBold: true,
-                        ),
-                      ),
-                      title: TextWidget(
-                        text: student['name'],
-                        fontSize: 20.0,
-                        color: black,
-                        isBold: true,
-                        fontFamily: 'Regular',
-                      ),
-                      subtitle: TextWidget(
-                        text: '$completedLevels/5 levels completed',
-                        fontSize: 14.0,
-                        color: grey,
-                        fontFamily: 'Regular',
-                      ),
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 16.0),
+                          decoration: BoxDecoration(
+                            color: white,
+                            borderRadius: BorderRadius.circular(16.0),
+                            border: Border.all(color: secondary, width: 2.0),
+                            boxShadow: [
+                              BoxShadow(
+                                color: grey.withOpacity(0.3),
+                                blurRadius: 8.0,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: ExpansionTile(
+                            leading: CircleAvatar(
+                              backgroundColor: primary,
+                              child: TextWidget(
+                                text: student['name'][0],
+                                fontSize: 18.0,
+                                color: white,
+                                isBold: true,
+                              ),
+                            ),
+                            title: TextWidget(
+                              text: student['name'],
+                              fontSize: 20.0,
+                              color: black,
+                              isBold: true,
+                              fontFamily: 'Regular',
+                            ),
+                            subtitle: TextWidget(
+                              text: '$completedLevels/5 levels completed',
+                              fontSize: 14.0,
+                              color: grey,
+                              fontFamily: 'Regular',
+                            ),
                             children: [
-                              // Level progress bars
-                              ...List.generate(5, (levelIndex) {
-                                final levelNumber = levelIndex + 1;
-                                final levelData =
-                                    student['levelProgress'][levelNumber];
-                                final isCompleted = levelData != null &&
-                                    levelData['completed'] == true;
+                              Container(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  children: [
+                                    // Level progress bars
+                                    ...List.generate(5, (levelIndex) {
+                                      final levelNumber = levelIndex + 1;
+                                      final dynamic levelProgress =
+                                          student['levelProgress'];
+                                      final dynamic levelData = levelProgress is Map
+                                          ? (levelProgress[levelNumber] ??
+                                              levelProgress['$levelNumber'])
+                                          : null;
+                                      final bool isCompleted = levelData != null &&
+                                          levelData['completed'] == true;
 
-                                return GestureDetector(
-                                  onTap: () {
-                                    _showStudentLevelHistory(
-                                      student['name'],
-                                      levelNumber,
-                                      levelData,
-                                    );
-                                  },
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 12.0),
-                                    padding: const EdgeInsets.all(12.0),
-                                    decoration: BoxDecoration(
-                                      color: isCompleted
-                                          ? levels[levelIndex]['color']
-                                              .withOpacity(0.1)
-                                          : grey.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12.0),
-                                      border: Border.all(
-                                        color: isCompleted
-                                            ? levels[levelIndex]['color']
-                                            : grey,
-                                        width: 1.0,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          isCompleted
-                                              ? Icons.check_circle
-                                              : Icons.lock,
-                                          color: isCompleted
-                                              ? levels[levelIndex]['color']
-                                              : grey,
-                                          size: 24.0,
-                                        ),
-                                        const SizedBox(width: 12.0),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
+                                      return GestureDetector(
+                                        onTap: () {
+                                          _showStudentLevelHistory(
+                                            student['name'],
+                                            levelNumber,
+                                            levelData ??
+                                                {
+                                                  'completed': false,
+                                                  'score': 0,
+                                                  'totalItems':
+                                                      levels[levelIndex]
+                                                          ['totalItems'],
+                                                  'date': null,
+                                                },
+                                          );
+                                        },
+                                        child: Container(
+                                          margin: const EdgeInsets.only(
+                                              bottom: 12.0),
+                                          padding: const EdgeInsets.all(12.0),
+                                          decoration: BoxDecoration(
+                                            color: isCompleted
+                                                ? levels[levelIndex]['color']
+                                                    .withOpacity(0.1)
+                                                : grey.withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(12.0),
+                                            border: Border.all(
+                                              color: isCompleted
+                                                  ? levels[levelIndex]['color']
+                                                  : grey,
+                                              width: 1.0,
+                                            ),
+                                          ),
+                                          child: Row(
                                             children: [
-                                              TextWidget(
-                                                text:
-                                                    'Level $levelNumber - ${levels[levelIndex]['description']}',
-                                                fontSize: 16.0,
+                                              Icon(
+                                                isCompleted
+                                                    ? Icons.check_circle
+                                                    : Icons.lock,
                                                 color: isCompleted
                                                     ? levels[levelIndex]
                                                         ['color']
                                                     : grey,
-                                                isBold: true,
+                                                size: 24.0,
                                               ),
-                                              if (isCompleted &&
-                                                  levelData != null) ...[
-                                                const SizedBox(height: 4.0),
-                                                TextWidget(
-                                                  text:
-                                                      'Score: ${levelData['score']}/${levelData['totalItems']} • ${levelData['date'] ?? 'Unknown'}',
-                                                  fontSize: 14.0,
-                                                  color: grey,
+                                              const SizedBox(width: 12.0),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment
+                                                          .start,
+                                                  children: [
+                                                    TextWidget(
+                                                      text:
+                                                          'Level $levelNumber - ${levels[levelIndex]['description']}',
+                                                      fontSize: 16.0,
+                                                      color: isCompleted
+                                                          ? levels[levelIndex]
+                                                              ['color']
+                                                          : grey,
+                                                      isBold: true,
+                                                    ),
+                                                    if (isCompleted &&
+                                                        levelData != null) ...[
+                                                      const SizedBox(
+                                                          height: 4.0),
+                                                      TextWidget(
+                                                        text:
+                                                            'Score: ${levelData['score']}/${levelData['totalItems']} • ${levelData['date'] ?? 'Unknown'}',
+                                                        fontSize: 14.0,
+                                                        color: grey,
+                                                      ),
+                                                    ],
+                                                  ],
                                                 ),
-                                              ],
+                                              ),
+                                              Icon(
+                                                Icons.arrow_forward_ios,
+                                                color: isCompleted
+                                                    ? levels[levelIndex]
+                                                        ['color']
+                                                    : grey,
+                                                size: 16.0,
+                                              ),
                                             ],
                                           ),
                                         ),
-                                        Icon(
-                                          Icons.arrow_forward_ios,
-                                          color: isCompleted
-                                              ? levels[levelIndex]['color']
-                                              : grey,
-                                          size: 16.0,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }),
+                                      );
+                                    }),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
-                  );
+                        );
+
                 },
               ),
             ],
