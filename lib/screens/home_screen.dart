@@ -30,10 +30,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // Track level completion with scores
   Map<int, Map<String, dynamic>> _levelCompletion = {
-    1: {'completed': false, 'score': 0, 'totalItems': 5, 'date': null},
-    2: {'completed': false, 'score': 0, 'totalItems': 10, 'date': null},
-    3: {'completed': false, 'score': 0, 'totalItems': 15, 'date': null},
-    4: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
+    1: {'completed': false, 'score': 0, 'totalItems': 10, 'date': null},
+    2: {'completed': false, 'score': 0, 'totalItems': 15, 'date': null},
+    3: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
+    4: {'completed': false, 'score': 0, 'totalItems': 25, 'date': null},
     5: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
   };
 
@@ -99,16 +99,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
               final completed = value['completed'] == true;
               final score = (value['score'] ?? 0) as int;
-              final totalItems = (value['totalItems'] ??
-                      (updatedLevelCompletion[levelNumber]?['totalItems'] ??
-                          0))
-                  as int;
+
+              // Expected total items for this level based on current app
+              // configuration (e.g., Level 1 now has 10 letters, not 5).
+              final int defaultTotalItems =
+                  (updatedLevelCompletion[levelNumber]?['totalItems'] ?? 0)
+                      as int;
+
+              int loadedTotalItems =
+                  (value['totalItems'] ?? defaultTotalItems) as int;
+
+              // If the stored totalItems is smaller than the expected value
+              // (e.g., old data with 5 when the level now has 10 items),
+              // prefer the expected total so the score denominator is correct.
+              if (defaultTotalItems > 0 &&
+                  loadedTotalItems > 0 &&
+                  loadedTotalItems < defaultTotalItems) {
+                loadedTotalItems = defaultTotalItems;
+              }
+
               final date = value['date'];
 
               updatedLevelCompletion[levelNumber] = {
                 'completed': completed,
                 'score': score,
-                'totalItems': totalItems,
+                'totalItems': loadedTotalItems,
                 'date': date,
               };
 

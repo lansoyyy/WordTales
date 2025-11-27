@@ -888,16 +888,24 @@ class _PracticeScreenState extends State<PracticeScreen>
       // Special handling for very short words (single letters in Level 1)
       final bool isSingleLetter = t.replaceAll(' ', '').length == 1;
       if (isSingleLetter) {
-        // Be more forgiving for single letters like A, B, C where STT often
-        // returns the letter name ("see" for C, etc.).
+        // For single letters, only accept short utterances so that saying the
+        // picture word (e.g., "grape" for G) is NOT treated as correct, but
+        // short letter-name forms like "see" (for C) are still allowed.
+        final String hNoSpace = h.replaceAll(' ', '');
+        if (hNoSpace.length > 3) {
+          // Too long to be just a letter sound, treat as incorrect.
+          return false;
+        }
+
         double letterThreshold = 0.5;
         if (_incorrectAttempts >= 1) {
           letterThreshold = 0.4;
         }
+
+        final words = h.split(' ').where((w) => w.isNotEmpty).toList();
         return similarity >= letterThreshold ||
             t == h ||
-            h.split(' ').contains(t) ||
-            hasExactCharPrefix;
+            words.contains(t);
       }
 
       // For normal words, use a moderate threshold and relax slightly
@@ -1002,13 +1010,26 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       final bool completed = levelData['completed'] == true;
       final int storedScore = (levelData['score'] ?? 0) as int;
-      final int storedTotal = (levelData['totalItems'] ?? _totalItems) as int;
+
+      // Use the current number of practice items as the source of truth
+      // for totalItems. If older saved data has a smaller total (e.g., 5
+      // when the level now has 10 items), prefer the actual count so
+      // the score denominator is correct.
+      final int actualTotal = practiceItems.length;
+      final int storedTotalRaw =
+          (levelData['totalItems'] ?? _totalItems) as int;
+
+      int effectiveTotal = storedTotalRaw;
+      if (actualTotal > 0 &&
+          (storedTotalRaw <= 0 || storedTotalRaw != actualTotal)) {
+        effectiveTotal = actualTotal;
+      }
 
       if (!mounted) return;
 
       setState(() {
         _score = storedScore;
-        _totalItems = storedTotal;
+        _totalItems = effectiveTotal;
       });
 
       if (!completed) {
