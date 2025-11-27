@@ -491,56 +491,84 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   Future<void> _initSpeech() async {
-    _speech = stt.SpeechToText();
-
-    // Get available locales
-    final locales = await _speech.locales();
-    debugPrint('Available locales: ${locales.map((l) => l.localeId).toList()}');
-
-    // Try to find Filipino locale first, then fallback to English
     try {
-      _selectedLocaleId = locales
-          .firstWhere(
-            (locale) =>
-                locale.localeId.startsWith('fil') ||
-                locale.localeId.startsWith('tl'),
-            orElse: () => locales.firstWhere(
-              (locale) => locale.localeId.startsWith('en'),
-            ),
-          )
-          .localeId;
-    } catch (e) {
-      debugPrint('Error finding locale: $e');
-      _selectedLocaleId = locales.isNotEmpty ? locales.first.localeId : null;
-    }
+      _speech = stt.SpeechToText();
 
-    debugPrint('Selected locale: $_selectedLocaleId');
-
-    final available = await _speech.initialize(
-      onStatus: _onSpeechStatus,
-      onError: (error) {
-        debugPrint('Speech error: $error');
-        // Show user-friendly error for Filipino children
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Hindi ma-recognize ang speech. Subukan ulit! (Speech not recognized. Try again!)',
-                style: TextStyle(fontFamily: 'Regular'),
+      // Initialize the speech engine first
+      final available = await _speech.initialize(
+        onStatus: _onSpeechStatus,
+        onError: (error) {
+          debugPrint('Speech error: $error');
+          // Show user-friendly error for Filipino children
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Hindi ma-recognize ang speech. Subukan ulit! (Speech not recognized. Try again!)',
+                  style: TextStyle(fontFamily: 'Regular'),
+                ),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 3),
               ),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      },
-      finalTimeout: const Duration(seconds: 10),
-    );
+            );
+          }
+        },
+        finalTimeout: const Duration(seconds: 10),
+      );
 
-    if (mounted) {
-      setState(() {
-        _speechAvailable = available;
-      });
+      if (!mounted) return;
+
+      if (!available) {
+        setState(() {
+          _speechAvailable = false;
+        });
+        return;
+      }
+
+      // Only fetch locales after successful initialization
+      List<stt.LocaleName> locales = [];
+      try {
+        locales = await _speech.locales();
+        debugPrint(
+            'Available locales: ${locales.map((l) => l.localeId).toList()}');
+      } catch (e) {
+        debugPrint('Error fetching locales: $e');
+      }
+
+      String? selectedLocale;
+      if (locales.isNotEmpty) {
+        try {
+          selectedLocale = locales
+              .firstWhere(
+                (locale) =>
+                    locale.localeId.startsWith('fil') ||
+                    locale.localeId.startsWith('tl'),
+                orElse: () => locales.firstWhere(
+                  (locale) => locale.localeId.startsWith('en'),
+                ),
+              )
+              .localeId;
+        } catch (e) {
+          debugPrint('Error finding locale: $e');
+          selectedLocale = locales.first.localeId;
+        }
+      }
+
+      debugPrint('Selected locale: $selectedLocale');
+
+      if (mounted) {
+        setState(() {
+          _selectedLocaleId = selectedLocale;
+          _speechAvailable = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error initializing speech engine: $e');
+      if (mounted) {
+        setState(() {
+          _speechAvailable = false;
+        });
+      }
     }
   }
 
@@ -555,14 +583,18 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   Future<void> _startListening() async {
     if (!_speechAvailable) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Speech not available. Check microphone permission.'),
-          ),
-        );
+      await _initSpeech();
+      if (!_speechAvailable) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Speech not available. Please check microphone permission or try again.'),
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
     setState(() {
       _recognizedText = '';
