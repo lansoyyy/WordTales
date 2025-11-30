@@ -74,11 +74,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     try {
       final prefs = await SharedPreferences.getInstance();
       final studentName = prefs.getString('student_name');
+      // Determine which teacher this student belongs to; default to
+      // 'default_teacher' for backwards compatibility.
+      final String teacherId =
+          prefs.getString('current_teacher_id') ?? 'default_teacher';
 
       if (studentName != null) {
         final student = await _studentService.getStudentByName(
           name: studentName,
-          teacherId: 'default_teacher',
+          teacherId: teacherId,
         );
 
         if (mounted && student != null) {

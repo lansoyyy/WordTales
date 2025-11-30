@@ -609,6 +609,24 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
   void _showStudentLevelHistory(
       String studentName, int levelNumber, Map<String, dynamic> levelData) {
+    // Extract per-item results (which items were completed or failed)
+    final dynamic results = levelData['results'];
+    final Set<int> completedItems = <int>{};
+    final Set<int> failedItems = <int>{};
+
+    if (results is Map) {
+      final dynamic completed = results['completedItems'];
+      final dynamic failed = results['failedItems'];
+
+      if (completed is List) {
+        completedItems
+            .addAll(completed.map<int>((e) => (e as num).toInt()));
+      }
+      if (failed is List) {
+        failedItems.addAll(failed.map<int>((e) => (e as num).toInt()));
+      }
+    }
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -735,14 +753,25 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                   itemCount: levels[levelNumber - 1]['content'].length,
                   itemBuilder: (context, index) {
                     final item = levels[levelNumber - 1]['content'][index];
+                    final bool isItemCompleted = completedItems.contains(index);
+                    final bool isItemFailed = failedItems.contains(index);
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8.0),
                       padding: const EdgeInsets.all(12.0),
                       decoration: BoxDecoration(
-                        color: white,
+                        color: isItemFailed
+                            ? Colors.red.withOpacity(0.05)
+                            : isItemCompleted
+                                ? Colors.green.withOpacity(0.05)
+                                : white,
                         borderRadius: BorderRadius.circular(8.0),
-                        border:
-                            Border.all(color: levels[levelNumber - 1]['color']),
+                        border: Border.all(
+                          color: isItemFailed
+                              ? Colors.red
+                              : isItemCompleted
+                                  ? Colors.green
+                                  : levels[levelNumber - 1]['color'],
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -758,7 +787,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                             child: TextWidget(
                               text: item['content'],
                               fontSize: 16.0,
-                              color: black,
+                              color: isItemFailed
+                                  ? Colors.red
+                                  : isItemCompleted
+                                      ? Colors.green
+                                      : black,
                             ),
                           ),
                           Container(
@@ -800,6 +833,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                               levelDescription: levels[levelNumber - 1]
                                   ['description'],
                               isTeacher: true,
+                              teacherName: widget.teacherName,
                             ),
                           ),
                         );

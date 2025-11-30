@@ -51,15 +51,23 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // Find or create student with default teacher
+      // Determine which teacher this student belongs to.
+      // If a teacher has logged in on this device, we use that teacher's ID.
+      // Otherwise, fall back to the original 'default_teacher'.
+      final prefs = await SharedPreferences.getInstance();
+      final String selectedTeacherId =
+          prefs.getString('current_teacher_id') ?? 'default_teacher';
+
+      // Find or create student for the selected teacher
       await _studentService.findOrCreateStudent(
         name: _studentNameController.text.trim(),
-        teacherId: 'default_teacher',
+        teacherId: selectedTeacherId,
       );
 
-      // Save student name to SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('student_name', _studentNameController.text.trim());
+      // Save student name and associated teacher to SharedPreferences
+      await prefs.setString(
+          'student_name', _studentNameController.text.trim());
+      await prefs.setString('current_teacher_id', selectedTeacherId);
 
       Fluttertoast.showToast(
         msg: 'Welcome back, ${_studentNameController.text}!',
@@ -116,6 +124,12 @@ class _LoginScreenState extends State<LoginScreen> {
           backgroundColor: Colors.green,
           textColor: white,
         );
+
+        // Persist current teacher so student logins and HomeScreen
+        // can associate students with the correct teacher.
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('current_teacher_id', teacher['id']);
+        await prefs.setString('current_teacher_name', teacher['name']);
 
         if (mounted) {
           Navigator.pushReplacement(

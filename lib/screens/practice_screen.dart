@@ -18,6 +18,7 @@ class PracticeScreen extends StatefulWidget {
   String? levelDescription;
   String? studentId;
   String? studentName;
+  String? teacherName;
   VoidCallback? onLevelCompleted;
   Function(int score, int totalItems)? onLevelCompletedWithScore;
 
@@ -28,6 +29,7 @@ class PracticeScreen extends StatefulWidget {
     this.levelDescription,
     this.studentId,
     this.studentName,
+    this.teacherName,
     this.onLevelCompleted,
     this.onLevelCompletedWithScore,
   });
@@ -1242,7 +1244,18 @@ class _PracticeScreenState extends State<PracticeScreen>
                   fontFamily: 'Regular',
                   align: TextAlign.center,
                 ),
-                const SizedBox(height: 12.0),
+                const SizedBox(height: 8.0),
+                if (_characterFeedback.isNotEmpty)
+                  TextWidget(
+                    text: 'Accuracy: ' +
+                        _calculateAccuracyPercentage().toStringAsFixed(0) +
+                        '%',
+                    fontSize: 16.0,
+                    color: grey,
+                    fontFamily: 'Regular',
+                    align: TextAlign.center,
+                  ),
+                const SizedBox(height: 8.0),
                 TextWidget(
                   text: 'Tap NEXT to continue to the next item.',
                   fontSize: 16.0,
@@ -1690,9 +1703,9 @@ class _PracticeScreenState extends State<PracticeScreen>
                 ),
               ),
 
-              // Teacher name section
+              // Teacher name section (only in teacher practice mode)
               Visibility(
-                visible: widget.isTeacher!,
+                visible: widget.isTeacher ?? false,
                 child: Container(
                   margin: const EdgeInsets.only(top: 16.0),
                   padding: const EdgeInsets.symmetric(
@@ -1705,7 +1718,8 @@ class _PracticeScreenState extends State<PracticeScreen>
                     border: Border.all(color: Colors.purple, width: 2.0),
                   ),
                   child: TextWidget(
-                    text: '👩‍🏫 Emma Watson',
+                    text:
+                        '👩‍🏫 ${widget.teacherName ?? 'Teacher'}',
                     fontSize: 24.0,
                     color: Colors.purple.shade800,
                     isBold: true,
@@ -1904,7 +1918,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                                       ),
                                     ),
                                   )
-                                else
+                                else if (widget.level == 1)
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: List.generate(
@@ -1955,6 +1969,19 @@ class _PracticeScreenState extends State<PracticeScreen>
                                         ),
                                       ),
                                     ),
+                                  )
+                                else
+                                  TextWidget(
+                                    text: currentItem['content']!,
+                                    fontSize: 42.0,
+                                    color: _characterFeedback
+                                                .every((c) => c == 'correct')
+                                        ? Colors.green
+                                        : Colors.red,
+                                    isBold: true,
+                                    maxLines: 3,
+                                    align: TextAlign.center,
+                                    fontFamily: 'Regular',
                                   ),
 
                                 if (isCurrentItemCompleted)
