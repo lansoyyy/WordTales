@@ -665,8 +665,31 @@ class _PracticeScreenState extends State<PracticeScreen>
     // Always update character-by-character feedback for the latest speech
     _generateCharacterFeedback(target, _recognizedText);
 
+    // Evaluate how well the speech matches the target
+    final bool baseMatch = _matchesTarget(target, _recognizedText);
+    final double accuracy =
+        _characterFeedback.isNotEmpty ? _calculateAccuracyPercentage() : 0.0;
+
+    // Apply additional accuracy gating so that low-accuracy attempts
+    // are not counted as correct, even if the similarity function is
+    // generous.
+    bool isMatch = baseMatch;
+    if (type == 'Sentence') {
+      // For sentences, require all words to be correct; otherwise the
+      // sentence is treated as incorrect.
+      if (accuracy < 99.9) {
+        isMatch = false;
+      }
+    } else if (type == 'Word') {
+      // For multi-letter words, require reasonable character accuracy.
+      final bool isSingleLetterTarget =
+          target.replaceAll(' ', '').trim().length == 1;
+      if (!isSingleLetterTarget && accuracy < 70.0) {
+        isMatch = false;
+      }
+    }
+
     // For single-word items, allow early acceptance even on partial results
-    final isMatch = _matchesTarget(target, _recognizedText);
     if (type == 'Word' && isMatch) {
       _stopListening();
       if (!_completedItems.contains(_currentIndex) &&
@@ -715,6 +738,45 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   void _generateCharacterFeedback(String target, String spoken) {
+    final type = practiceItems[_currentIndex]['type'];
+
+    // For sentences, provide feedback at the word level so that only the
+    // misread words are highlighted (e.g., only "eat" turns red in
+    // "I eat my food" when that word is mispronounced).
+    if (type == 'Sentence') {
+      final targetWords =
+          target.toUpperCase().trim().split(RegExp(r'\s+'));
+      final spokenWords =
+          spoken.toUpperCase().trim().split(RegExp(r'\s+'));
+
+      final feedback = <String>[];
+      for (int i = 0; i < targetWords.length; i++) {
+        final targetWord = targetWords[i];
+
+        if (targetWord.isEmpty) {
+          feedback.add('missing');
+          continue;
+        }
+
+        if (i < spokenWords.length) {
+          final spokenWord = spokenWords[i];
+          if (spokenWord == targetWord) {
+            feedback.add('correct');
+          } else {
+            feedback.add('incorrect');
+          }
+        } else {
+          feedback.add('missing');
+        }
+      }
+
+      setState(() {
+        _characterFeedback = feedback;
+      });
+      return;
+    }
+
+    // For letters and words, keep character-level feedback.
     final targetChars = target.toUpperCase().split('');
     final spokenChars = spoken.toUpperCase().split('');
     final feedback = <String>[];
@@ -834,6 +896,13 @@ class _PracticeScreenState extends State<PracticeScreen>
       _showIncorrectFeedback = true;
     });
 
+    // After 2 attempts (including mixed ones), allow students to
+    // move to the next item via the same popup used for fully
+    // incorrect attempts.
+    if (!(widget.isTeacher ?? false) && _incorrectAttempts == 2) {
+      _showNextItemPopup();
+    }
+
     // Clear previous timer if exists
     _incorrectFeedbackTimer?.cancel();
 
@@ -901,21 +970,18 @@ class _PracticeScreenState extends State<PracticeScreen>
     final tChars = t.replaceAll(' ', '').split('');
     final hChars = h.replaceAll(' ', '').split('');
     int correctChars = 0;
-    int mismatchChars = 0;
     for (int i = 0; i < tChars.length && i < hChars.length; i++) {
       if (tChars[i] == hChars[i]) {
         correctChars++;
-      } else {
-        mismatchChars++;
       }
     }
     final double charMatchRatio =
         tChars.isNotEmpty ? correctChars / tChars.length : 0.0;
-    final bool hasExactCharPrefix =
-        tChars.isNotEmpty && mismatchChars == 0 && hChars.length >= tChars.length;
+    final int tLen = tChars.length;
+    final int hLen = hChars.length;
 
     debugPrint(
-        'Target: "$t", Hypothesis: "$h", Similarity: $similarity, CharMatch: $charMatchRatio, ExactPrefix: $hasExactCharPrefix');
+        'Target: "$t", Hypothesis: "$h", Similarity: $similarity, CharMatch: $charMatchRatio');
 
     final type = practiceItems[_currentIndex]['type'];
     if (type == 'Word') {
@@ -925,12 +991,6 @@ class _PracticeScreenState extends State<PracticeScreen>
         // For single letters, only accept short utterances so that saying the
         // picture word (e.g., "grape" for G) is NOT treated as correct, but
         // short letter-name forms like "see" (for C) are still allowed.
-        final String hNoSpace = h.replaceAll(' ', '');
-        if (hNoSpace.length > 3) {
-          // Too long to be just a letter sound, treat as incorrect.
-          return false;
-        }
-
         double letterThreshold = 0.5;
         if (_incorrectAttempts >= 1) {
           letterThreshold = 0.4;
@@ -942,23 +1002,64 @@ class _PracticeScreenState extends State<PracticeScreen>
             words.contains(t);
       }
 
-      // For normal words, use a moderate threshold and relax slightly
-      // after several incorrect attempts.
-      double wordThreshold = 0.7;
-      if (_incorrectAttempts >= 2) {
-        wordThreshold = 0.6;
+      // For normal words (2+ letters), be stricter so that extra
+      // trailing sounds like "AND" for target "AN" are not
+      // treated as correct.
+
+      // For very short words/syllables (2-3 letters), require the
+      // recognized character length to match exactly.
+      if (tLen <= 3 && hLen != tLen) {
+        return false;
       }
 
-      return similarity >= wordThreshold ||
-          t == h ||
-          h.split(' ').contains(t) ||
-          // If all characters match in order as a prefix (e.g., "ACT" vs "A C T" or "ARE" vs "ARE YOU OKAY"), accept as correct
-          hasExactCharPrefix;
+      // For longer words, do not allow a long extra tail
+      // (e.g., target "ACT" vs hypothesis "ACTIVITY").
+      if (tLen > 3 && hLen > tLen + 1) {
+        return false;
+      }
+
+      // Use a moderate similarity threshold and relax slightly
+      // after several incorrect attempts.
+      double wordThreshold = 0.75;
+      if (_incorrectAttempts >= 2) {
+        wordThreshold = 0.65;
+      }
+
+      // Also require good character-level agreement for words.
+      if (charMatchRatio < 0.8) {
+        return false;
+      }
+
+      return similarity >= wordThreshold || t == h;
     } else {
-      // For sentences, use a moderate threshold
-      return similarity >= 0.75 ||
-          h.contains(t) ||
-          _wordMatchRatio(t, h) >= 0.8;
+      // Stricter handling for sentences so that misread sentences
+      // (e.g., saying a different last word) are not treated as
+      // correct just because overall similarity is moderately high.
+
+      final tWords =
+          t.split(' ').where((w) => w.isNotEmpty).toList(growable: false);
+      final hWords =
+          h.split(' ').where((w) => w.isNotEmpty).toList(growable: false);
+      final double wordRatio = _wordMatchRatio(t, h);
+
+      // If the hypothesis is much shorter or much longer than the
+      // target sentence, treat it as incorrect.
+      if (hWords.length < (tWords.length * 0.7) ||
+          hWords.length > (tWords.length * 1.3)) {
+        return false;
+      }
+
+      // Require reasonably high similarity and word overlap.
+      double sentenceThreshold = 0.8;
+      if (_incorrectAttempts >= 2) {
+        sentenceThreshold = 0.75;
+      }
+
+      // Short sentences (up to 4 words) need near-perfect word
+      // overlap; longer ones can be slightly more lenient.
+      final double minWordRatio = tWords.length <= 4 ? 0.95 : 0.85;
+
+      return similarity >= sentenceThreshold && wordRatio >= minWordRatio;
     }
   }
 
@@ -1868,55 +1969,64 @@ class _PracticeScreenState extends State<PracticeScreen>
                                   Wrap(
                                     alignment: WrapAlignment.center,
                                     runSpacing: 4.0,
-                                    children: List.generate(
-                                      currentItem['content']!.length,
-                                      (index) => Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 4.0,
-                                          vertical: 4.0,
-                                        ),
-                                        margin: const EdgeInsets.symmetric(
-                                          horizontal: 1.0,
-                                          vertical: 2.0,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: index <
-                                                  _characterFeedback.length
-                                              ? (_characterFeedback[index] ==
-                                                      'correct'
-                                                  ? Colors.green
-                                                      .withOpacity(0.3)
-                                                  : Colors.red
-                                                      .withOpacity(0.3))
-                                              : Colors.grey.withOpacity(0.2),
-                                          borderRadius:
-                                              BorderRadius.circular(6.0),
-                                          border: Border.all(
-                                            color: index <
-                                                    _characterFeedback.length
-                                                ? (_characterFeedback[index] ==
-                                                        'correct'
-                                                    ? Colors.green
-                                                    : Colors.red)
-                                                : Colors.grey,
-                                            width: 1.5,
+                                    spacing: 4.0,
+                                    children: () {
+                                      final words = currentItem['content']!
+                                          .split(RegExp(r'\\s+'));
+                                      return List.generate(words.length,
+                                          (index) {
+                                        final word = words[index];
+                                        final String status = index <
+                                                _characterFeedback.length
+                                            ? _characterFeedback[index]
+                                            : 'missing';
+
+                                        Color bgColor;
+                                        Color borderColor;
+                                        Color textColor;
+
+                                        if (status == 'correct') {
+                                          bgColor = Colors.green.withOpacity(0.2);
+                                          borderColor = Colors.green;
+                                          textColor = Colors.green.shade800;
+                                        } else if (status == 'incorrect') {
+                                          bgColor = Colors.red.withOpacity(0.2);
+                                          borderColor = Colors.red;
+                                          textColor = Colors.red.shade800;
+                                        } else {
+                                          bgColor = Colors.grey.withOpacity(0.1);
+                                          borderColor = Colors.grey;
+                                          textColor = primary;
+                                        }
+
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6.0,
+                                            vertical: 4.0,
                                           ),
-                                        ),
-                                        child: TextWidget(
-                                          text: currentItem['content']![index],
-                                          fontSize: 30.0,
-                                          color: index <
-                                                  _characterFeedback.length
-                                              ? (_characterFeedback[index] ==
-                                                      'correct'
-                                                  ? Colors.green
-                                                  : Colors.red)
-                                              : primary,
-                                          isBold: true,
-                                          fontFamily: 'Regular',
-                                        ),
-                                      ),
-                                    ),
+                                          margin: const EdgeInsets.symmetric(
+                                            horizontal: 1.0,
+                                            vertical: 2.0,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: bgColor,
+                                            borderRadius:
+                                                BorderRadius.circular(6.0),
+                                            border: Border.all(
+                                              color: borderColor,
+                                              width: 1.5,
+                                            ),
+                                          ),
+                                          child: TextWidget(
+                                            text: word,
+                                            fontSize: 26.0,
+                                            color: textColor,
+                                            isBold: true,
+                                            fontFamily: 'Regular',
+                                          ),
+                                        );
+                                      });
+                                    }(),
                                   )
                                 else if (widget.level == 1)
                                   Row(
