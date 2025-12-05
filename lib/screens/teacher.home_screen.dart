@@ -40,7 +40,31 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
   final StudentService _studentService = StudentService();
   List<Map<String, dynamic>> _students = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
+
+  Color _getPerformanceColor(double percentage) {
+    if (percentage >= 97.0) {
+      return Colors.green;
+    } else if (percentage >= 90.0) {
+      return Colors.orange;
+    } else {
+      return Colors.red;
+    }
+  }
+
+  int _getPerformanceBandOrder(double? percentage, bool isCompleted) {
+    // Lower value = higher priority in sorting
+    if (!isCompleted || percentage == null) {
+      return 3; // Not started / no score
+    }
+    if (percentage <= 89.0) {
+      return 0; // Frustration (red)
+    } else if (percentage <= 96.0) {
+      return 1; // Instructional (orange)
+    } else {
+      return 2; // Independent (green)
+    }
+  }
 
   // Level data with descriptions and content
   final List<Map<String, dynamic>> levels = [
@@ -619,26 +643,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                 ],
               ),
               const SizedBox(height: 16.0),
-              Row(
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: () => _addItemToLevel(levelIndex),
-                    icon: Icon(Icons.add, color: white, size: 20.0),
-                    label: TextWidget(
-                      text: 'Add Item',
-                      fontSize: 16.0,
-                      color: white,
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: levels[levelIndex]['color'],
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8.0),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16.0),
               Expanded(
                 child: ListView.builder(
                   itemCount: levels[levelIndex]['content'].length,
@@ -706,6 +710,23 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
   void _showStudentLevelHistory(
       String studentName, int levelNumber, Map<String, dynamic> levelData) {
+    // Extract per-item results (which items were completed or failed)
+    final dynamic results = levelData['results'];
+    final Set<int> completedItems = <int>{};
+    final Set<int> failedItems = <int>{};
+
+    if (results is Map) {
+      final dynamic completed = results['completedItems'];
+      final dynamic failed = results['failedItems'];
+
+      if (completed is List) {
+        completedItems.addAll(completed.map<int>((e) => (e as num).toInt()));
+      }
+      if (failed is List) {
+        failedItems.addAll(failed.map<int>((e) => (e as num).toInt()));
+      }
+    }
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -832,14 +853,25 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                   itemCount: levels[levelNumber - 1]['content'].length,
                   itemBuilder: (context, index) {
                     final item = levels[levelNumber - 1]['content'][index];
+                    final bool isItemCompleted = completedItems.contains(index);
+                    final bool isItemFailed = failedItems.contains(index);
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8.0),
                       padding: const EdgeInsets.all(12.0),
                       decoration: BoxDecoration(
-                        color: white,
+                        color: isItemFailed
+                            ? Colors.red.withOpacity(0.05)
+                            : isItemCompleted
+                                ? Colors.green.withOpacity(0.05)
+                                : white,
                         borderRadius: BorderRadius.circular(8.0),
-                        border:
-                            Border.all(color: levels[levelNumber - 1]['color']),
+                        border: Border.all(
+                          color: isItemFailed
+                              ? Colors.red
+                              : isItemCompleted
+                                  ? Colors.green
+                                  : levels[levelNumber - 1]['color'],
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -855,7 +887,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                             child: TextWidget(
                               text: item['content'],
                               fontSize: 16.0,
-                              color: black,
+                              color: isItemFailed
+                                  ? Colors.red
+                                  : isItemCompleted
+                                      ? Colors.green
+                                      : black,
                             ),
                           ),
                           Container(
@@ -897,6 +933,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                               levelDescription: levels[levelNumber - 1]
                                   ['description'],
                               isTeacher: true,
+                              teacherName: widget.teacherName,
                             ),
                           ),
                         );
@@ -949,6 +986,56 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   void _showLevelStudentList(int levelIndex) {
     final level = levels[levelIndex];
     final levelStats = getLevelStats(level['level']);
+
+    // Build a locally sorted copy of students by performance band for this level
+    final List<Map<String, dynamic>> sortedStudents = List.from(_students);
+    sortedStudents.sort((a, b) {
+      final dynamic aLevelProgress = a['levelProgress'];
+      final dynamic bLevelProgress = b['levelProgress'];
+
+      final dynamic aLevelData = aLevelProgress is Map
+          ? (aLevelProgress[level['level']] ??
+              aLevelProgress['${level['level']}'])
+          : null;
+      final dynamic bLevelData = bLevelProgress is Map
+          ? (bLevelProgress[level['level']] ??
+              bLevelProgress['${level['level']}'])
+          : null;
+
+      final bool aCompleted =
+          aLevelData != null && (aLevelData['completed'] == true);
+      final bool bCompleted =
+          bLevelData != null && (bLevelData['completed'] == true);
+
+      final double? aPercent = aCompleted
+          ? ((aLevelData['totalItems'] ?? 0) > 0
+              ? (aLevelData['score'] ?? 0) *
+                  100.0 /
+                  (aLevelData['totalItems'] ?? 1)
+              : null)
+          : null;
+      final double? bPercent = bCompleted
+          ? ((bLevelData['totalItems'] ?? 0) > 0
+              ? (bLevelData['score'] ?? 0) *
+                  100.0 /
+                  (bLevelData['totalItems'] ?? 1)
+              : null)
+          : null;
+
+      final int aBand = _getPerformanceBandOrder(aPercent, aCompleted);
+      final int bBand = _getPerformanceBandOrder(bPercent, bCompleted);
+
+      if (aBand != bBand) {
+        return aBand.compareTo(bBand);
+      }
+
+      // Within same band, sort by percentage descending, then name
+      if ((aPercent ?? -1) != (bPercent ?? -1)) {
+        return (bPercent ?? -1).compareTo(aPercent ?? -1);
+      }
+
+      return (a['name'] as String).compareTo(b['name'] as String);
+    });
 
     showDialog(
       context: context,
@@ -1088,12 +1175,25 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
               // Student list
               Expanded(
                 child: ListView.builder(
-                  itemCount: _students.length,
+                  itemCount: sortedStudents.length,
                   itemBuilder: (context, index) {
-                    final student = _students[index];
-                    final levelData = student['levelProgress'][level['level']];
-                    final isCompleted =
-                        levelData != null && levelData['completed'];
+                    final student = sortedStudents[index];
+                    final dynamic levelProgress = student['levelProgress'];
+                    final dynamic levelData = levelProgress is Map
+                        ? (levelProgress[level['level']] ??
+                            levelProgress['${level['level']}'])
+                        : null;
+                    final bool isCompleted =
+                        levelData != null && levelData['completed'] == true;
+
+                    double? percentage;
+                    Color? performanceColor;
+                    if (isCompleted && (levelData['totalItems'] ?? 0) > 0) {
+                      percentage = (levelData['score'] ?? 0) *
+                          100.0 /
+                          (levelData['totalItems'] ?? 1);
+                      performanceColor = _getPerformanceColor(percentage!);
+                    }
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8.0),
@@ -1138,10 +1238,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                 if (isCompleted) ...[
                                   const SizedBox(height: 4.0),
                                   TextWidget(
-                                    text:
-                                        'Score: ${levelData['score']}/${levelData['totalItems']} • ${levelData['date']}',
+                                    text: percentage != null
+                                        ? 'Score: ${levelData['score']}/${levelData['totalItems']} (${percentage.toStringAsFixed(0)}%) • ${levelData['date']}'
+                                        : 'Score: ${levelData['score']}/${levelData['totalItems']} • ${levelData['date']}',
                                     fontSize: 14.0,
-                                    color: grey,
+                                    color: performanceColor ?? grey,
                                   ),
                                 ] else ...[
                                   const SizedBox(height: 4.0),
@@ -1245,14 +1346,26 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    // Calculate summary stats
-    int totalStudents = _students.length;
-    int totalCompletedLevels = _students.fold(0, (sum, student) {
-      return sum + 5;
-    });
-    double averageAccuracy = _students.isNotEmpty
-        ? (totalCompletedLevels * 100.0) / (_students.length * 5)
-        : 0.0;
+    // Calculate summary stats based on actual completed levels
+    final int totalStudents = _students.length;
+    int completedLevels = 0;
+    final int totalLevelSlots = totalStudents * levels.length;
+
+    for (final student in _students) {
+      final dynamic levelProgress = student['levelProgress'];
+      if (levelProgress is Map) {
+        for (int levelNumber = 1; levelNumber <= levels.length; levelNumber++) {
+          final dynamic levelData =
+              levelProgress[levelNumber] ?? levelProgress['$levelNumber'];
+          if (levelData is Map && levelData['completed'] == true) {
+            completedLevels++;
+          }
+        }
+      }
+    }
+
+    final double averageAccuracy =
+        totalLevelSlots > 0 ? (completedLevels * 100.0) / totalLevelSlots : 0.0;
 
     return Scaffold(
       backgroundColor: Colors.amber[100],
@@ -1347,7 +1460,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                     Column(
                       children: [
                         TextWidget(
-                          text: '$totalCompletedLevels',
+                          text: '$completedLevels',
                           fontSize: 24.0,
                           color: primary,
                           isBold: true,
@@ -1660,7 +1773,21 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                       itemCount: filteredStudents.length,
                       itemBuilder: (context, index) {
                         final student = filteredStudents[index];
-                        final completedLevels = 1;
+                        int completedLevels = 0;
+                        final dynamic levelProgress = student['levelProgress'];
+                        if (levelProgress is Map) {
+                          for (int levelNumber = 1;
+                              levelNumber <= levels.length;
+                              levelNumber++) {
+                            final dynamic levelData =
+                                levelProgress[levelNumber] ??
+                                    levelProgress['$levelNumber'];
+                            if (levelData is Map &&
+                                levelData['completed'] == true) {
+                              completedLevels++;
+                            }
+                          }
+                        }
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 16.0),
@@ -1686,47 +1813,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                 isBold: true,
                               ),
                             ),
-                            title: Row(
-                              children: [
-                                Expanded(
-                                  child: TextWidget(
-                                    text: student['name'],
-                                    fontSize: 20.0,
-                                    color: black,
-                                    isBold: true,
-                                    fontFamily: 'Regular',
-                                  ),
-                                ),
-                                // Section badge
-                                if (student['section'] != null)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8.0,
-                                      vertical: 4.0,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: secondary.withOpacity(0.2),
-                                      borderRadius: BorderRadius.circular(12.0),
-                                      border: Border.all(color: secondary),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          _getSectionEmoji(student['section']),
-                                          style: const TextStyle(fontSize: 14),
-                                        ),
-                                        const SizedBox(width: 4),
-                                        TextWidget(
-                                          text: student['section'],
-                                          fontSize: 12.0,
-                                          color: primary,
-                                          isBold: true,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
+                            title: TextWidget(
+                              text: student['name'],
+                              fontSize: 20.0,
+                              color: black,
+                              isBold: true,
+                              fontFamily: 'Regular',
                             ),
                             subtitle: TextWidget(
                               text: '$completedLevels/5 levels completed',
@@ -1742,17 +1834,31 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                     // Level progress bars
                                     ...List.generate(5, (levelIndex) {
                                       final levelNumber = levelIndex + 1;
-                                      final levelData =
-                                          student['levelProgress'][levelNumber];
-                                      final isCompleted = levelData != null &&
-                                          levelData['completed'] == true;
+                                      final dynamic levelProgress =
+                                          student['levelProgress'];
+                                      final dynamic levelData =
+                                          levelProgress is Map
+                                              ? (levelProgress[levelNumber] ??
+                                                  levelProgress['$levelNumber'])
+                                              : null;
+                                      final bool isCompleted =
+                                          levelData != null &&
+                                              levelData['completed'] == true;
 
                                       return GestureDetector(
                                         onTap: () {
                                           _showStudentLevelHistory(
                                             student['name'],
                                             levelNumber,
-                                            levelData,
+                                            levelData ??
+                                                {
+                                                  'completed': false,
+                                                  'score': 0,
+                                                  'totalItems':
+                                                      levels[levelIndex]
+                                                          ['totalItems'],
+                                                  'date': null,
+                                                },
                                           );
                                         },
                                         child: Container(

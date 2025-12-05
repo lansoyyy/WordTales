@@ -155,12 +155,14 @@ class StudentService {
     }
   }
 
-  // Update student level progress
+  // Update student level progress (completed level)
   Future<void> updateLevelProgress({
     required String studentId,
     required int level,
     required int score,
     required int totalItems,
+    List<int>? completedItems,
+    List<int>? failedItems,
   }) async {
     try {
       await _firestore.collection(_studentsCollection).doc(studentId).update({
@@ -169,10 +171,46 @@ class StudentService {
           'score': score,
           'totalItems': totalItems,
           'date': DateTime.now().toString().split(' ')[0],
+          if (completedItems != null || failedItems != null)
+            'results': {
+              'completedItems': completedItems ?? <int>[],
+              'failedItems': failedItems ?? <int>[],
+            },
         }
       });
     } catch (e) {
       print('Error updating level progress: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> updateLevelPartialProgress({
+    required String studentId,
+    required int level,
+    required int score,
+    required int totalItems,
+    required int currentIndex,
+    required List<int> completedItems,
+    required List<int> failedItems,
+    required int incorrectAttempts,
+  }) async {
+    try {
+      await _firestore.collection(_studentsCollection).doc(studentId).update({
+        'levelProgress.$level': {
+          'completed': false,
+          'score': score,
+          'totalItems': totalItems,
+          'date': DateTime.now().toString().split(' ')[0],
+          'inProgress': {
+            'currentIndex': currentIndex,
+            'completedItems': completedItems,
+            'failedItems': failedItems,
+            'incorrectAttempts': incorrectAttempts,
+          },
+        }
+      });
+    } catch (e) {
+      print('Error updating partial level progress: $e');
       rethrow;
     }
   }

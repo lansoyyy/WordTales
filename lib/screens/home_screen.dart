@@ -30,10 +30,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // Track level completion with scores
   Map<int, Map<String, dynamic>> _levelCompletion = {
-    1: {'completed': false, 'score': 0, 'totalItems': 5, 'date': null},
-    2: {'completed': false, 'score': 0, 'totalItems': 10, 'date': null},
-    3: {'completed': false, 'score': 0, 'totalItems': 15, 'date': null},
-    4: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
+    1: {'completed': false, 'score': 0, 'totalItems': 10, 'date': null},
+    2: {'completed': false, 'score': 0, 'totalItems': 15, 'date': null},
+    3: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
+    4: {'completed': false, 'score': 0, 'totalItems': 25, 'date': null},
     5: {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
   };
 
@@ -74,17 +74,83 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     try {
       final prefs = await SharedPreferences.getInstance();
       final studentName = prefs.getString('student_name');
+      // Determine which teacher this student belongs to; default to
+      // 'default_teacher' for backwards compatibility.
+      final String teacherId =
+          prefs.getString('current_teacher_id') ?? 'default_teacher';
 
       if (studentName != null) {
         final student = await _studentService.getStudentByName(
           name: studentName,
-          teacherId: 'default_teacher',
+          teacherId: teacherId,
         );
 
-        if (mounted) {
+        if (mounted && student != null) {
+          final levelProgress = student['levelProgress'] as Map<String, dynamic>?;
+
+          // Start from defaults and then apply any saved progress
+          Map<int, Map<String, dynamic>> updatedLevelCompletion =
+              Map<int, Map<String, dynamic>>.from(_levelCompletion);
+          int highestUnlocked = 1;
+
+          if (levelProgress != null) {
+            levelProgress.forEach((key, value) {
+              final int? levelNumber = int.tryParse(key);
+              if (levelNumber == null || levelNumber < 1 || levelNumber > 5) {
+                return;
+              }
+              if (value is! Map) return;
+
+              final completed = value['completed'] == true;
+              final score = (value['score'] ?? 0) as int;
+
+              // Expected total items for this level based on current app
+              // configuration (e.g., Level 1 now has 10 letters, not 5).
+              final int defaultTotalItems =
+                  (updatedLevelCompletion[levelNumber]?['totalItems'] ?? 0)
+                      as int;
+
+              int loadedTotalItems =
+                  (value['totalItems'] ?? defaultTotalItems) as int;
+
+              // If the stored totalItems is smaller than the expected value
+              // (e.g., old data with 5 when the level now has 10 items),
+              // prefer the expected total so the score denominator is correct.
+              if (defaultTotalItems > 0 &&
+                  loadedTotalItems > 0 &&
+                  loadedTotalItems < defaultTotalItems) {
+                loadedTotalItems = defaultTotalItems;
+              }
+
+              final date = value['date'];
+
+              updatedLevelCompletion[levelNumber] = {
+                'completed': completed,
+                'score': score,
+                'totalItems': loadedTotalItems,
+                'date': date,
+              };
+
+              if (completed) {
+                // Unlock next level if within range, keep last level as 5
+                final nextLevel = levelNumber == 5 ? 5 : levelNumber + 1;
+                if (nextLevel > highestUnlocked) {
+                  highestUnlocked = nextLevel;
+                }
+              }
+            });
+          }
+
           setState(() {
             _studentName = studentName;
-            _studentId = student?['id'];
+            _studentId = student['id'];
+            _levelCompletion = updatedLevelCompletion;
+            _highestUnlockedLevel = highestUnlocked;
+          });
+        } else if (mounted) {
+          // Student record not found, but keep name from preferences
+          setState(() {
+            _studentName = studentName;
           });
         }
       }

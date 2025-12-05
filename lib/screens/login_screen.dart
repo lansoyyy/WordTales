@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:word_tales/screens/teacher.home_screen.dart';
 import 'package:word_tales/screens/reminder_screen.dart';
+import 'package:word_tales/screens/teacher_signup_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
 import 'package:word_tales/services/auth_service.dart';
@@ -93,16 +94,23 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // Find or create student with default teacher and section
+      // Determine which teacher this student belongs to.
+      // If a teacher has logged in on this device, we use that teacher's ID.
+      // Otherwise, fall back to the original 'default_teacher'.
+      final prefs = await SharedPreferences.getInstance();
+      final String selectedTeacherId =
+          prefs.getString('current_teacher_id') ?? 'default_teacher';
+
+      // Find or create student for the selected teacher
       await _studentService.findOrCreateStudent(
         name: _studentNameController.text.trim(),
-        teacherId: 'default_teacher',
+        teacherId: selectedTeacherId,
         section: _selectedSection!,
       );
 
-      // Save student name to SharedPreferences
-      final prefs = await SharedPreferences.getInstance();
+      // Save student name and associated teacher to SharedPreferences
       await prefs.setString('student_name', _studentNameController.text.trim());
+      await prefs.setString('current_teacher_id', selectedTeacherId);
 
       Fluttertoast.showToast(
         msg: 'Welcome back, ${_studentNameController.text}!',
@@ -159,6 +167,12 @@ class _LoginScreenState extends State<LoginScreen> {
           backgroundColor: Colors.green,
           textColor: white,
         );
+
+        // Persist current teacher so student logins and HomeScreen
+        // can associate students with the correct teacher.
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('current_teacher_id', teacher['id']);
+        await prefs.setString('current_teacher_name', teacher['name']);
 
         if (mounted) {
           Navigator.pushReplacement(
@@ -435,6 +449,27 @@ class _LoginScreenState extends State<LoginScreen> {
                         isBold: true,
                       ),
               ),
+              if (_showTeacherLogin) ...[
+                const SizedBox(height: 8.0),
+                TextButton(
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const TeacherSignupScreen(),
+                            ),
+                          );
+                        },
+                  child: TextWidget(
+                    text: 'Create a new teacher account',
+                    fontSize: 14.0,
+                    color: primary,
+                    isItalize: true,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

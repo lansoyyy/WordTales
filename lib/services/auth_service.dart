@@ -107,4 +107,37 @@ class AuthService {
       rethrow;
     }
   }
+
+  Future<Map<String, dynamic>> createTeacher({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final exists = await emailExists(email);
+      if (exists) {
+        throw Exception('Email already in use');
+      }
+
+      final docRef = await _firestore.collection(_teachersCollection).add({
+        'email': email,
+        'password': password,
+        'name': name,
+        'createdAt': FieldValue.serverTimestamp(),
+        'isActive': true,
+      });
+
+      final teacherData = {
+        'id': docRef.id,
+        'email': email,
+        'name': name,
+        'isActive': true,
+      };
+
+      return teacherData;
+    } catch (e) {
+      print('Error creating teacher: $e');
+      rethrow;
+    }
+  }
 }

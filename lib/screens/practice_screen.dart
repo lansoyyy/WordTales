@@ -8,6 +8,7 @@ import 'package:word_tales/services/filipino_pronunciation_service.dart';
 import 'package:word_tales/utils/words.dart';
 import 'package:word_tales/services/student_service.dart';
 import 'package:word_tales/services/auth_service.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'dart:async';
 
 class PracticeScreen extends StatefulWidget {
@@ -17,6 +18,7 @@ class PracticeScreen extends StatefulWidget {
   String? levelDescription;
   String? studentId;
   String? studentName;
+  String? teacherName;
   VoidCallback? onLevelCompleted;
   Function(int score, int totalItems)? onLevelCompletedWithScore;
 
@@ -27,6 +29,7 @@ class PracticeScreen extends StatefulWidget {
     this.levelDescription,
     this.studentId,
     this.studentName,
+    this.teacherName,
     this.onLevelCompleted,
     this.onLevelCompletedWithScore,
   });
@@ -50,8 +53,10 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   // Track completed items and score
   Set<int> _completedItems = {};
+  Set<int> _failedItems = {};
   int _score = 0;
   int _totalItems = 0;
+  bool _isReviewMode = false;
 
   // Speech to Text state
   late stt.SpeechToText _speech;
@@ -73,6 +78,8 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   // Services
   final StudentService _studentService = StudentService();
+  final FlutterTts _flutterTts = FlutterTts();
+  bool _hasListenedCurrentItem = false;
 
   @override
   void initState() {
@@ -116,7 +123,19 @@ class _PracticeScreenState extends State<PracticeScreen>
       CurvedAnimation(parent: _celebrationController, curve: Curves.bounceOut),
     );
 
+    _loadExistingProgress();
     _initSpeech();
+    _initTts();
+  }
+
+  Future<void> _initTts() async {
+    try {
+      await _flutterTts.setLanguage('en-US');
+      await _flutterTts.setSpeechRate(0.4);
+      await _flutterTts.setPitch(1.0);
+    } catch (e) {
+      debugPrint('Error initializing TTS: $e');
+    }
   }
 
   void _initializePracticeItems() {
@@ -477,61 +496,89 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   Future<void> _initSpeech() async {
-    _speech = stt.SpeechToText();
-
-    // Get available locales
-    final locales = await _speech.locales();
-    debugPrint('Available locales: ${locales.map((l) => l.localeId).toList()}');
-
-    // Try to find Filipino locale first, then fallback to English
     try {
-      _selectedLocaleId = locales
-          .firstWhere(
-            (locale) =>
-                locale.localeId.startsWith('fil') ||
-                locale.localeId.startsWith('tl'),
-            orElse: () => locales.firstWhere(
-              (locale) => locale.localeId.startsWith('en'),
-            ),
-          )
-          .localeId;
-    } catch (e) {
-      debugPrint('Error finding locale: $e');
-      _selectedLocaleId = locales.isNotEmpty ? locales.first.localeId : null;
-    }
+      _speech = stt.SpeechToText();
 
-    debugPrint('Selected locale: $_selectedLocaleId');
-
-    final available = await _speech.initialize(
-      onStatus: _onSpeechStatus,
-      onError: (error) {
-        debugPrint('Speech error: $error');
-        // Set speech error flag so skip button appears
-        if (mounted) {
-          setState(() {
-            _hasSpeechError = true;
-            _isListening = false;
-          });
-          // Show user-friendly error for Filipino children
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Hindi ma-recognize ang speech. Pwede mong i-skip! (Speech not recognized. You can skip!)',
-                style: TextStyle(fontFamily: 'Regular'),
+      // Initialize the speech engine first
+      final available = await _speech.initialize(
+        onStatus: _onSpeechStatus,
+        onError: (error) {
+          debugPrint('Speech error: $error');
+          // Set speech error flag so skip button appears
+          if (mounted) {
+            setState(() {
+              _hasSpeechError = true;
+              _isListening = false;
+            });
+            // Show user-friendly error for Filipino children
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Hindi ma-recognize ang speech. Pwede mong i-skip! (Speech not recognized. You can skip!)',
+                  style: TextStyle(fontFamily: 'Regular'),
+                ),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 4),
               ),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-        }
-      },
-      finalTimeout: const Duration(seconds: 10),
-    );
+            );
+          }
+        },
+        finalTimeout: const Duration(seconds: 10),
+      );
 
-    if (mounted) {
-      setState(() {
-        _speechAvailable = available;
-      });
+      if (!mounted) return;
+
+      if (!available) {
+        setState(() {
+          _speechAvailable = false;
+        });
+        return;
+      }
+
+      // Only fetch locales after successful initialization
+      List<stt.LocaleName> locales = [];
+      try {
+        locales = await _speech.locales();
+        debugPrint(
+            'Available locales: ${locales.map((l) => l.localeId).toList()}');
+      } catch (e) {
+        debugPrint('Error fetching locales: $e');
+      }
+
+      String? selectedLocale;
+      if (locales.isNotEmpty) {
+        try {
+          selectedLocale = locales
+              .firstWhere(
+                (locale) =>
+                    locale.localeId.startsWith('fil') ||
+                    locale.localeId.startsWith('tl'),
+                orElse: () => locales.firstWhere(
+                  (locale) => locale.localeId.startsWith('en'),
+                ),
+              )
+              .localeId;
+        } catch (e) {
+          debugPrint('Error finding locale: $e');
+          selectedLocale = locales.first.localeId;
+        }
+      }
+
+      debugPrint('Selected locale: $selectedLocale');
+
+      if (mounted) {
+        setState(() {
+          _selectedLocaleId = selectedLocale;
+          _speechAvailable = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error initializing speech engine: $e');
+      if (mounted) {
+        setState(() {
+          _speechAvailable = false;
+        });
+      }
     }
   }
 
@@ -546,14 +593,18 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   Future<void> _startListening() async {
     if (!_speechAvailable) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Speech not available. Check microphone permission.'),
-          ),
-        );
+      await _initSpeech();
+      if (!_speechAvailable) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Speech not available. Please check microphone permission or try again.'),
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
     setState(() {
       _recognizedText = '';
@@ -566,7 +617,10 @@ class _PracticeScreenState extends State<PracticeScreen>
     await _speech.listen(
       onResult: _onSpeechResult,
       partialResults: true,
-      listenMode: stt.ListenMode.dictation,
+      // Use confirmation mode and shorter timeouts for clearer short-word capture
+      listenMode: stt.ListenMode.confirmation,
+      listenFor: const Duration(seconds: 8),
+      pauseFor: const Duration(seconds: 2),
       localeId: _selectedLocaleId,
       onSoundLevelChange: (level) {
         if (!mounted) return;
@@ -588,6 +642,19 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   void _toggleListening() {
+    // Students must listen to the word first before practicing
+    if (!(widget.isTeacher ?? false) && !_hasListenedCurrentItem) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please tap Listen to hear the word first.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
     if (_isListening) {
       _stopListening();
     } else {
@@ -603,13 +670,54 @@ class _PracticeScreenState extends State<PracticeScreen>
     });
 
     final target = practiceItems[_currentIndex]['content']!;
+    final type = practiceItems[_currentIndex]['type'];
 
-    // Generate character-by-character feedback
+    // Always update character-by-character feedback for the latest speech
     _generateCharacterFeedback(target, _recognizedText);
 
-    if (_matchesTarget(target, _recognizedText)) {
+    // Evaluate how well the speech matches the target
+    final bool baseMatch = _matchesTarget(target, _recognizedText);
+    final double accuracy =
+        _characterFeedback.isNotEmpty ? _calculateAccuracyPercentage() : 0.0;
+
+    // Apply additional accuracy gating so that low-accuracy attempts
+    // are not counted as correct, even if the similarity function is
+    // generous.
+    bool isMatch = baseMatch;
+    if (type == 'Sentence') {
+      // For sentences, require all words to be correct; otherwise the
+      // sentence is treated as incorrect.
+      if (accuracy < 99.9) {
+        isMatch = false;
+      }
+    } else if (type == 'Word') {
+      // For multi-letter words, require reasonable character accuracy.
+      final bool isSingleLetterTarget =
+          target.replaceAll(' ', '').trim().length == 1;
+      if (!isSingleLetterTarget && accuracy < 70.0) {
+        isMatch = false;
+      }
+    }
+
+    // For single-word items, allow early acceptance even on partial results
+    if (type == 'Word' && isMatch) {
       _stopListening();
-      if (!_completedItems.contains(_currentIndex)) {
+      if (!_completedItems.contains(_currentIndex) &&
+          !_failedItems.contains(_currentIndex)) {
+        _markCurrentItemAsCompleted();
+      }
+      return;
+    }
+
+    // Only treat FINAL results as full attempts
+    if (!result.finalResult) {
+      return;
+    }
+
+    if (isMatch) {
+      _stopListening();
+      if (!_completedItems.contains(_currentIndex) &&
+          !_failedItems.contains(_currentIndex)) {
         _markCurrentItemAsCompleted();
       }
     } else if (_recognizedText.isNotEmpty) {
@@ -625,10 +733,58 @@ class _PracticeScreenState extends State<PracticeScreen>
         // Show incorrect feedback
         _showIncorrectFeedbackMessage();
       }
+
+      // If this is the 3rd incorrect attempt for this item, mark it as failed
+      if (_incorrectAttempts >= 3 &&
+          !_completedItems.contains(_currentIndex) &&
+          !_failedItems.contains(_currentIndex)) {
+        _stopListening();
+        setState(() {
+          _failedItems.add(_currentIndex);
+        });
+        _checkLevelCompletion();
+      }
     }
   }
 
   void _generateCharacterFeedback(String target, String spoken) {
+    final type = practiceItems[_currentIndex]['type'];
+
+    // For sentences, provide feedback at the word level so that only the
+    // misread words are highlighted (e.g., only "eat" turns red in
+    // "I eat my food" when that word is mispronounced).
+    if (type == 'Sentence') {
+      final targetWords = target.toUpperCase().trim().split(RegExp(r'\s+'));
+      final spokenWords = spoken.toUpperCase().trim().split(RegExp(r'\s+'));
+
+      final feedback = <String>[];
+      for (int i = 0; i < targetWords.length; i++) {
+        final targetWord = targetWords[i];
+
+        if (targetWord.isEmpty) {
+          feedback.add('missing');
+          continue;
+        }
+
+        if (i < spokenWords.length) {
+          final spokenWord = spokenWords[i];
+          if (spokenWord == targetWord) {
+            feedback.add('correct');
+          } else {
+            feedback.add('incorrect');
+          }
+        } else {
+          feedback.add('missing');
+        }
+      }
+
+      setState(() {
+        _characterFeedback = feedback;
+      });
+      return;
+    }
+
+    // For letters and words, keep character-level feedback.
     final targetChars = target.toUpperCase().split('');
     final spokenChars = spoken.toUpperCase().split('');
     final feedback = <String>[];
@@ -648,11 +804,23 @@ class _PracticeScreenState extends State<PracticeScreen>
     });
   }
 
+  double _calculateAccuracyPercentage() {
+    if (_characterFeedback.isEmpty) return 0.0;
+    final int correctCount =
+        _characterFeedback.where((status) => status == 'correct').length;
+    return 100.0 * correctCount / _characterFeedback.length;
+  }
+
   void _showIncorrectFeedbackMessage() {
     setState(() {
       _incorrectAttempts++;
       _showIncorrectFeedback = true;
     });
+
+    // After 2 incorrect attempts, allow students to move to the next item via popup
+    if (!(widget.isTeacher ?? false) && _incorrectAttempts == 2) {
+      _showNextItemPopup();
+    }
 
     // Clear previous timer if exists
     _incorrectFeedbackTimer?.cancel();
@@ -736,6 +904,13 @@ class _PracticeScreenState extends State<PracticeScreen>
       _showIncorrectFeedback = true;
     });
 
+    // After 2 attempts (including mixed ones), allow students to
+    // move to the next item via the same popup used for fully
+    // incorrect attempts.
+    if (!(widget.isTeacher ?? false) && _incorrectAttempts == 2) {
+      _showNextItemPopup();
+    }
+
     // Clear previous timer if exists
     _incorrectFeedbackTimer?.cancel();
 
@@ -799,17 +974,98 @@ class _PracticeScreenState extends State<PracticeScreen>
     final similarity =
         FilipinoPronunciationService.calculateFilipinoSimilarity(t, h);
 
-    debugPrint('Target: "$t", Hypothesis: "$h", Similarity: $similarity');
+    // Additional character-level check (ignoring spaces) for short words
+    final tChars = t.replaceAll(' ', '').split('');
+    final hChars = h.replaceAll(' ', '').split('');
+    int correctChars = 0;
+    for (int i = 0; i < tChars.length && i < hChars.length; i++) {
+      if (tChars[i] == hChars[i]) {
+        correctChars++;
+      }
+    }
+    final double charMatchRatio =
+        tChars.isNotEmpty ? correctChars / tChars.length : 0.0;
+    final int tLen = tChars.length;
+    final int hLen = hChars.length;
+
+    debugPrint(
+        'Target: "$t", Hypothesis: "$h", Similarity: $similarity, CharMatch: $charMatchRatio');
 
     final type = practiceItems[_currentIndex]['type'];
     if (type == 'Word') {
-      // For words, use a lower threshold due to Filipino pronunciation variations
-      return similarity >= 0.7 || t == h || h.split(' ').contains(t);
+      // Special handling for very short words (single letters in Level 1)
+      final bool isSingleLetter = t.replaceAll(' ', '').length == 1;
+      if (isSingleLetter) {
+        // For single letters, only accept short utterances so that saying the
+        // picture word (e.g., "grape" for G) is NOT treated as correct, but
+        // short letter-name forms like "see" (for C) are still allowed.
+        double letterThreshold = 0.5;
+        if (_incorrectAttempts >= 1) {
+          letterThreshold = 0.4;
+        }
+
+        final words = h.split(' ').where((w) => w.isNotEmpty).toList();
+        return similarity >= letterThreshold || t == h || words.contains(t);
+      }
+
+      // For normal words (2+ letters), be stricter so that extra
+      // trailing sounds like "AND" for target "AN" are not
+      // treated as correct.
+
+      // For very short words/syllables (2-3 letters), require the
+      // recognized character length to match exactly.
+      if (tLen <= 3 && hLen != tLen) {
+        return false;
+      }
+
+      // For longer words, do not allow a long extra tail
+      // (e.g., target "ACT" vs hypothesis "ACTIVITY").
+      if (tLen > 3 && hLen > tLen + 1) {
+        return false;
+      }
+
+      // Use a moderate similarity threshold and relax slightly
+      // after several incorrect attempts.
+      double wordThreshold = 0.75;
+      if (_incorrectAttempts >= 2) {
+        wordThreshold = 0.65;
+      }
+
+      // Also require good character-level agreement for words.
+      if (charMatchRatio < 0.8) {
+        return false;
+      }
+
+      return similarity >= wordThreshold || t == h;
     } else {
-      // For sentences, use a moderate threshold
-      return similarity >= 0.75 ||
-          h.contains(t) ||
-          _wordMatchRatio(t, h) >= 0.8;
+      // Stricter handling for sentences so that misread sentences
+      // (e.g., saying a different last word) are not treated as
+      // correct just because overall similarity is moderately high.
+
+      final tWords =
+          t.split(' ').where((w) => w.isNotEmpty).toList(growable: false);
+      final hWords =
+          h.split(' ').where((w) => w.isNotEmpty).toList(growable: false);
+      final double wordRatio = _wordMatchRatio(t, h);
+
+      // If the hypothesis is much shorter or much longer than the
+      // target sentence, treat it as incorrect.
+      if (hWords.length < (tWords.length * 0.7) ||
+          hWords.length > (tWords.length * 1.3)) {
+        return false;
+      }
+
+      // Require reasonably high similarity and word overlap.
+      double sentenceThreshold = 0.8;
+      if (_incorrectAttempts >= 2) {
+        sentenceThreshold = 0.75;
+      }
+
+      // Short sentences (up to 4 words) need near-perfect word
+      // overlap; longer ones can be slightly more lenient.
+      final double minWordRatio = tWords.length <= 4 ? 0.95 : 0.85;
+
+      return similarity >= sentenceThreshold && wordRatio >= minWordRatio;
     }
   }
 
@@ -823,6 +1079,8 @@ class _PracticeScreenState extends State<PracticeScreen>
         level: widget.level!,
         score: _score,
         totalItems: _totalItems,
+        completedItems: _completedItems.toList(),
+        failedItems: _failedItems.toList(),
       );
 
       if (mounted) {
@@ -854,6 +1112,128 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
   }
 
+  Future<void> _savePartialProgress() async {
+    if (widget.isTeacher! || widget.studentId == null || _isReviewMode) return;
+
+    // If level is already finished, don't overwrite completed progress
+    if (_completedItems.length + _failedItems.length == practiceItems.length) {
+      return;
+    }
+
+    try {
+      await _studentService.updateLevelPartialProgress(
+        studentId: widget.studentId!,
+        level: widget.level!,
+        score: _score,
+        totalItems: _totalItems,
+        currentIndex: _currentIndex,
+        completedItems: _completedItems.toList(),
+        failedItems: _failedItems.toList(),
+        incorrectAttempts: _incorrectAttempts,
+      );
+    } catch (e) {
+      debugPrint('Error saving partial progress: $e');
+    }
+  }
+
+  Future<void> _loadExistingProgress() async {
+    if (widget.isTeacher! || widget.studentId == null || widget.level == null) {
+      return;
+    }
+
+    try {
+      final student = await _studentService.getStudent(widget.studentId!);
+      final levelProgress = student?['levelProgress'];
+      if (levelProgress == null) return;
+
+      final levelData = levelProgress['${widget.level}'];
+      if (levelData == null) return;
+
+      final bool completed = levelData['completed'] == true;
+      final int storedScore = (levelData['score'] ?? 0) as int;
+
+      // Use the current number of practice items as the source of truth
+      // for totalItems. If older saved data has a smaller total (e.g., 5
+      // when the level now has 10 items), prefer the actual count so
+      // the score denominator is correct.
+      final int actualTotal = practiceItems.length;
+      final int storedTotalRaw =
+          (levelData['totalItems'] ?? _totalItems) as int;
+
+      int effectiveTotal = storedTotalRaw;
+      if (actualTotal > 0 &&
+          (storedTotalRaw <= 0 || storedTotalRaw != actualTotal)) {
+        effectiveTotal = actualTotal;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _score = storedScore;
+        _totalItems = effectiveTotal;
+      });
+
+      if (!completed) {
+        final inProgress = levelData['inProgress'];
+        if (inProgress != null && inProgress is Map) {
+          final dynamic idx = inProgress['currentIndex'];
+          final dynamic completedItems = inProgress['completedItems'];
+          final dynamic failedItems = inProgress['failedItems'];
+          final dynamic incorrectAttempts = inProgress['incorrectAttempts'];
+
+          setState(() {
+            if (idx is int && idx >= 0 && idx < practiceItems.length) {
+              _currentIndex = idx;
+            }
+            if (completedItems is List) {
+              _completedItems =
+                  completedItems.map<int>((e) => (e as num).toInt()).toSet();
+            }
+            if (failedItems is List) {
+              _failedItems =
+                  failedItems.map<int>((e) => (e as num).toInt()).toSet();
+            }
+            _incorrectAttempts =
+                incorrectAttempts is int ? incorrectAttempts : 0;
+          });
+        }
+      } else {
+        // If level already completed, try to restore per-item results
+        final results = levelData['results'];
+        if (results != null && results is Map) {
+          final dynamic completedItems = results['completedItems'];
+          final dynamic failedItems = results['failedItems'];
+
+          setState(() {
+            _isReviewMode = true;
+
+            if (completedItems is List) {
+              _completedItems =
+                  completedItems.map<int>((e) => (e as num).toInt()).toSet();
+            } else {
+              _completedItems =
+                  Set<int>.from(List.generate(practiceItems.length, (i) => i));
+            }
+
+            if (failedItems is List) {
+              _failedItems =
+                  failedItems.map<int>((e) => (e as num).toInt()).toSet();
+            }
+          });
+        } else {
+          // Backwards compatibility: if no detailed results, mark all as completed
+          setState(() {
+            _isReviewMode = true;
+            _completedItems =
+                Set<int>.from(List.generate(practiceItems.length, (i) => i));
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading existing progress: $e');
+    }
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
@@ -861,6 +1241,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     _pulseController.dispose();
     _celebrationController.dispose();
     _incorrectFeedbackTimer?.cancel();
+    _flutterTts.stop();
     if (_isListening) {
       _speech.stop();
     }
@@ -873,17 +1254,29 @@ class _PracticeScreenState extends State<PracticeScreen>
     _speech.stop();
 
     setState(() {
+      // If the current item hasn't been marked correct or failed yet,
+      // treat it as failed so the level can still be finished.
+      if (!_completedItems.contains(_currentIndex) &&
+          !_failedItems.contains(_currentIndex)) {
+        _failedItems.add(_currentIndex);
+      }
+
       _currentIndex = (_currentIndex + 1) % practiceItems.length;
-      // Reset all state for fresh start on next item
+
+      // Reset state for the next item
       _characterFeedback = [];
       _showIncorrectFeedback = false;
       _hasSpeechError = false;
+      _incorrectAttempts = 0;
       _recognizedText = '';
       _confidence = 0.0;
-      _incorrectAttempts = 0;
+      _hasListenedCurrentItem = false;
       _isListening = false;
       _soundLevel = 0.0;
     });
+
+    // After potentially marking a failed item, re-check if the level is done
+    _checkLevelCompletion();
 
     // Auto-start listening for next item if requested (e.g., after skip)
     if (autoStartListening && _speechAvailable) {
@@ -896,23 +1289,128 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
   }
 
+  Future<void> _listenCurrentItem() async {
+    final current = practiceItems[_currentIndex];
+    final text = current['content'];
+    if (text == null || text.isEmpty) return;
+
+    if (_isListening) {
+      await _stopListening();
+    }
+
+    try {
+      await _flutterTts.stop();
+      await _flutterTts.speak(text);
+      if (mounted) {
+        setState(() {
+          _hasListenedCurrentItem = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error during TTS speak: $e');
+    }
+  }
+
   void _markCurrentItemAsCompleted() {
     setState(() {
+      _failedItems.remove(_currentIndex);
       _completedItems.add(_currentIndex);
-      _score += 10; // Add 10 points for each completed item
-      // Reset character feedback when item is completed
-      _characterFeedback = [];
+      _score += 1;
       _showIncorrectFeedback = false;
       _incorrectAttempts = 0;
-
-      // Check if all items are completed
-      if (_completedItems.length == practiceItems.length) {
-        // Save progress to Firestore when level is completed
-        _saveProgressToFirestore();
-        // Level completed!
-        _showLevelCompletedDialog();
-      }
     });
+    _checkLevelCompletion();
+
+    // For students, show a Next Item pop-up if there are more items
+    if (!(widget.isTeacher ?? false) &&
+        _completedItems.length < practiceItems.length) {
+      _showNextItemPopup();
+    }
+  }
+
+  void _checkLevelCompletion() {
+    if (_completedItems.length + _failedItems.length == practiceItems.length) {
+      _saveProgressToFirestore();
+      _showLevelCompletedDialog();
+    }
+  }
+
+  void _showNextItemPopup() {
+    if (!(mounted)) return;
+    if (widget.isTeacher ?? false) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24.0),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextWidget(
+                  text: 'Great job practicing! 🎉',
+                  fontSize: 20.0,
+                  color: primary,
+                  isBold: true,
+                  fontFamily: 'Regular',
+                  align: TextAlign.center,
+                ),
+                const SizedBox(height: 8.0),
+                if (_characterFeedback.isNotEmpty)
+                  TextWidget(
+                    text: 'Accuracy: ' +
+                        _calculateAccuracyPercentage().toStringAsFixed(0) +
+                        '%',
+                    fontSize: 16.0,
+                    color: grey,
+                    fontFamily: 'Regular',
+                    align: TextAlign.center,
+                  ),
+                const SizedBox(height: 8.0),
+                TextWidget(
+                  text: 'Tap NEXT to continue to the next item.',
+                  fontSize: 16.0,
+                  color: black,
+                  fontFamily: 'Regular',
+                  align: TextAlign.center,
+                ),
+                const SizedBox(height: 20.0),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _nextItem();
+                    },
+                    icon: const Icon(Icons.arrow_forward, color: Colors.white),
+                    label: TextWidget(
+                      text: 'Next Item ➡️',
+                      fontSize: 18.0,
+                      color: Colors.white,
+                      isBold: true,
+                      fontFamily: 'Regular',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: secondary,
+                      foregroundColor: white,
+                      padding: const EdgeInsets.symmetric(vertical: 14.0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16.0),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _showLevelCompletedDialog() {
@@ -1195,728 +1693,860 @@ class _PracticeScreenState extends State<PracticeScreen>
   Widget build(BuildContext context) {
     final currentItem = practiceItems[_currentIndex];
     final isCurrentItemCompleted = _completedItems.contains(_currentIndex);
+    final bool isTeacherMode = widget.isTeacher ?? false;
+    final bool canGoNext = isTeacherMode ||
+        isCurrentItemCompleted ||
+        (!isTeacherMode && _incorrectAttempts >= 2);
 
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.amber[50]!,
-              Colors.orange[50]!,
-              Colors.yellow[50]!,
-            ],
-          ),
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              // Custom AppBar with gradient
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0, vertical: 12.0),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [primary, primary.withOpacity(0.8)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(25.0),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: grey.withOpacity(0.3),
-                      blurRadius: 10.0,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: SafeArea(
-                  child: Row(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          color: white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12.0),
-                        ),
-                        child: IconButton(
-                          icon:
-                              Icon(Icons.arrow_back, color: white, size: 30.0),
-                          onPressed: () {
-                            Navigator.pop(context);
-                          },
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 20),
-                        child: SizedBox(
-                          height: 80,
-                          child: Column(
-                            children: [
-                              AnimatedBuilder(
-                                animation: _pulseAnimation,
-                                builder: (context, child) {
-                                  return Transform.scale(
-                                    scale: _pulseAnimation.value,
-                                    child: TextWidget(
-                                      text:
-                                          widget.levelTitle ?? 'Practice Time!',
-                                      fontSize: 26.0,
-                                      color: white,
-                                      isBold: true,
-                                      fontFamily: 'Regular',
-                                    ),
-                                  );
-                                },
-                              ),
-                              if (widget.levelDescription != null)
-                                TextWidget(
-                                  text: widget.levelDescription!,
-                                  fontSize: 16.0,
-                                  color: white.withOpacity(0.9),
-                                  fontFamily: 'Regular',
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12.0),
-                        ),
-                        child: IconButton(
-                          tooltip: _isListening
-                              ? 'Stop listening'
-                              : 'Start speaking',
-                          icon: Transform.scale(
-                            scale: _isListening
-                                ? (1.0 + (_soundLevel.clamp(0, 60) / 120))
-                                : 1.0,
-                            child: Icon(
-                              _isListening ? Icons.hearing : Icons.mic,
-                              color: white,
-                              size: 30.0,
-                            ),
-                          ),
-                          onPressed: _speechAvailable ? _toggleListening : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+    return WillPopScope(
+        onWillPop: () async {
+          await _savePartialProgress();
+          return true;
+        },
+        child: Scaffold(
+          body: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.amber[50]!,
+                  Colors.orange[50]!,
+                  Colors.yellow[50]!,
+                ],
               ),
-
-              // Teacher name section
-              Visibility(
-                visible: widget.isTeacher!,
-                child: Container(
-                  margin: const EdgeInsets.only(top: 16.0),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20.0, vertical: 12.0),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.purple.shade100, Colors.purple.shade200],
-                    ),
-                    borderRadius: BorderRadius.circular(20.0),
-                    border: Border.all(color: Colors.purple, width: 2.0),
-                  ),
-                  child: TextWidget(
-                    text: '👩‍🏫 Emma Watson',
-                    fontSize: 24.0,
-                    color: Colors.purple.shade800,
-                    isBold: true,
-                  ),
-                ),
-              ),
-
-              SizedBox(
-                height: 1000,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24.0, vertical: 32.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Animated type label
-                      AnimatedBuilder(
-                        animation: _bounceAnimation,
-                        builder: (context, child) {
-                          return Transform.translate(
-                            offset: Offset(_bounceAnimation.value * 2, 0),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20.0, vertical: 8.0),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    primary.withOpacity(0.1),
-                                    primary.withOpacity(0.2)
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(20.0),
-                                border: Border.all(color: primary, width: 2.0),
-                              ),
-                              child: TextWidget(
-                                text: currentItem['type']!,
-                                fontSize: 24.0,
-                                color: primary,
-                                isItalize: true,
-                                isBold: true,
-                              ),
-                            ),
-                          );
-                        },
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  // Custom AppBar with gradient
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0, vertical: 12.0),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [primary, primary.withOpacity(0.8)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      const SizedBox(height: 32.0),
-
-                      // Word/Sentence Card with enhanced animations
-                      Stack(
-                        alignment: Alignment.center,
+                      borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(25.0),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: grey.withOpacity(0.3),
+                          blurRadius: 10.0,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: SafeArea(
+                      child: Row(
                         children: [
-                          // Animated floating stars
-                          Positioned(
-                            top: -30,
-                            left: 20,
-                            child: AnimatedBuilder(
-                              animation: _bounceAnimation,
-                              builder: (context, child) {
-                                return Transform.translate(
-                                  offset: Offset(0, _bounceAnimation.value * 2),
-                                  child: Icon(Icons.star,
-                                      color: Colors.amber[400], size: 30.0),
-                                );
-                              },
-                            ),
-                          ),
-                          Positioned(
-                            bottom: -30,
-                            right: 20,
-                            child: AnimatedBuilder(
-                              animation: _bounceAnimation,
-                              builder: (context, child) {
-                                return Transform.translate(
-                                  offset: Offset(0, _bounceAnimation.value * 2),
-                                  child: Icon(Icons.star,
-                                      color: Colors.amber[400], size: 30.0),
-                                );
-                              },
-                            ),
-                          ),
-                          Positioned(
-                            top: 20,
-                            right: -20,
-                            child: AnimatedBuilder(
-                              animation: _bounceAnimation,
-                              builder: (context, child) {
-                                return Transform.translate(
-                                  offset: Offset(_bounceAnimation.value * 2, 0),
-                                  child: Icon(Icons.favorite,
-                                      color: Colors.pink[300], size: 20.0),
-                                );
-                              },
-                            ),
-                          ),
-
-                          // Main content card
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 500),
-                            padding: const EdgeInsets.all(40.0),
+                          Container(
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: isCurrentItemCompleted
-                                    ? [
-                                        Colors.green.shade100,
-                                        Colors.green.shade200
-                                      ]
-                                    : [white, Colors.blue.shade50],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(30.0),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: grey.withOpacity(0.4),
-                                  blurRadius: 20.0,
-                                  offset: const Offset(0, 8),
-                                ),
-                              ],
-                              border: Border.all(
-                                  color: isCurrentItemCompleted
-                                      ? Colors.green
-                                      : primary,
-                                  width: 4.0),
+                              color: white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12.0),
                             ),
-                            child: Column(
-                              children: [
-                                // Emoji display
-                                Text(
-                                  currentItem['emoji']!,
-                                  style: const TextStyle(fontSize: 50.0),
-                                ),
-                                const SizedBox(height: 16.0),
-
-                                // Content text with character feedback
-                                if (_characterFeedback.isEmpty)
-                                  TextWidget(
-                                    text: currentItem['content']!,
-                                    fontSize: 42.0,
-                                    color: primary,
-                                    isBold: true,
-                                    maxLines: 3,
-                                    align: TextAlign.center,
-                                    fontFamily: 'Regular',
-                                  )
-                                else
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: List.generate(
-                                      currentItem['content']!.length,
-                                      (index) => Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 4.0,
-                                          vertical: 8.0,
-                                        ),
-                                        margin: const EdgeInsets.symmetric(
-                                          horizontal: 2.0,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: index <
-                                                  _characterFeedback.length
-                                              ? (_characterFeedback[index] ==
-                                                      'correct'
-                                                  ? Colors.green
-                                                      .withOpacity(0.3)
-                                                  : _characterFeedback[index] ==
-                                                          'incorrect'
-                                                      ? Colors.red
-                                                          .withOpacity(0.3)
-                                                      : Colors.grey
-                                                          .withOpacity(0.2))
-                                              : Colors.grey.withOpacity(0.2),
-                                          borderRadius:
-                                              BorderRadius.circular(8.0),
-                                          border: Border.all(
-                                            color: index <
-                                                    _characterFeedback.length
-                                                ? (_characterFeedback[index] ==
-                                                        'correct'
-                                                    ? Colors.green
-                                                    : _characterFeedback[
-                                                                index] ==
-                                                            'incorrect'
-                                                        ? Colors.red
-                                                        : Colors.grey)
-                                                : Colors.grey,
-                                            width: 2.0,
-                                          ),
-                                        ),
+                            child: IconButton(
+                              icon: Icon(Icons.arrow_back,
+                                  color: white, size: 30.0),
+                              onPressed: () async {
+                                await _savePartialProgress();
+                                Navigator.pop(context);
+                              },
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 20),
+                            child: SizedBox(
+                              height: 80,
+                              child: Column(
+                                children: [
+                                  AnimatedBuilder(
+                                    animation: _pulseAnimation,
+                                    builder: (context, child) {
+                                      return Transform.scale(
+                                        scale: _pulseAnimation.value,
                                         child: TextWidget(
-                                          text: currentItem['content']![index],
-                                          fontSize: 42.0,
-                                          color: index <
-                                                  _characterFeedback.length
-                                              ? (_characterFeedback[index] ==
-                                                      'correct'
-                                                  ? Colors.green
-                                                  : _characterFeedback[index] ==
-                                                          'incorrect'
-                                                      ? Colors.red
-                                                      : Colors.grey)
-                                              : primary,
+                                          text: widget.levelTitle ??
+                                              'Practice Time!',
+                                          fontSize: 26.0,
+                                          color: white,
                                           isBold: true,
                                           fontFamily: 'Regular',
                                         ),
-                                      ),
-                                    ),
+                                      );
+                                    },
                                   ),
-
-                                if (isCurrentItemCompleted)
-                                  Container(
-                                    margin: const EdgeInsets.only(top: 16.0),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16.0, vertical: 8.0),
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          Colors.green,
-                                          Colors.green.shade600
-                                        ],
-                                      ),
-                                      borderRadius: BorderRadius.circular(20.0),
+                                  if (widget.levelDescription != null)
+                                    TextWidget(
+                                      text: widget.levelDescription!,
+                                      fontSize: 16.0,
+                                      color: white.withOpacity(0.9),
+                                      fontFamily: 'Regular',
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.check_circle,
-                                            color: white, size: 24.0),
-                                        const SizedBox(width: 8.0),
-                                        TextWidget(
-                                          text: 'Completed! 🎉',
-                                          fontSize: 16.0,
-                                          color: white,
-                                          isBold: true,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
+                                ],
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12.0),
+                            ),
+                            child: IconButton(
+                              tooltip: _isListening
+                                  ? 'Stop listening'
+                                  : 'Start speaking',
+                              icon: Transform.scale(
+                                scale: _isListening
+                                    ? (1.0 + (_soundLevel.clamp(0, 60) / 120))
+                                    : 1.0,
+                                child: Icon(
+                                  _isListening ? Icons.hearing : Icons.mic,
+                                  color: white,
+                                  size: 30.0,
+                                ),
+                              ),
+                              onPressed:
+                                  _speechAvailable ? _toggleListening : null,
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 40.0),
+                    ),
+                  ),
 
-                      // Enhanced progress indicator
-                      Container(
-                        padding: const EdgeInsets.all(16.0),
-                        decoration: BoxDecoration(
-                          color: white.withOpacity(0.8),
-                          borderRadius: BorderRadius.circular(20.0),
-                          border: Border.all(color: grey.withOpacity(0.3)),
+                  // Teacher name section (only in teacher practice mode)
+                  Visibility(
+                    visible: widget.isTeacher ?? false,
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 16.0),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20.0, vertical: 12.0),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.purple.shade100,
+                            Colors.purple.shade200
+                          ],
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            for (int i = 0; i < practiceItems.length; i++)
-                              AnimatedContainer(
-                                duration: const Duration(milliseconds: 300),
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 4.0),
-                                width: 16.0,
-                                height: 16.0,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: _completedItems.contains(i)
-                                      ? Colors.green
-                                      : i == _currentIndex
-                                          ? primary
-                                          : grey.withOpacity(0.3),
-                                  boxShadow: i == _currentIndex
-                                      ? [
-                                          BoxShadow(
-                                            color: primary.withOpacity(0.5),
-                                            blurRadius: 8.0,
-                                            spreadRadius: 2.0,
-                                          ),
-                                        ]
-                                      : null,
+                        borderRadius: BorderRadius.circular(20.0),
+                        border: Border.all(color: Colors.purple, width: 2.0),
+                      ),
+                      child: TextWidget(
+                        text: '👩‍🏫 ${widget.teacherName ?? 'Teacher'}',
+                        fontSize: 24.0,
+                        color: Colors.purple.shade800,
+                        isBold: true,
+                      ),
+                    ),
+                  ),
+
+                  SizedBox(
+                    height: 1000,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24.0, vertical: 32.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Animated type label
+                          AnimatedBuilder(
+                            animation: _bounceAnimation,
+                            builder: (context, child) {
+                              return Transform.translate(
+                                offset: Offset(_bounceAnimation.value * 2, 0),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20.0, vertical: 8.0),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        primary.withOpacity(0.1),
+                                        primary.withOpacity(0.2)
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(20.0),
+                                    border:
+                                        Border.all(color: primary, width: 2.0),
+                                  ),
+                                  child: TextWidget(
+                                    text: currentItem['type']!,
+                                    fontSize: 24.0,
+                                    color: primary,
+                                    isItalize: true,
+                                    isBold: true,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 32.0),
+
+                          // Word/Sentence Card with enhanced animations
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              // Animated floating stars
+                              Positioned(
+                                top: -30,
+                                left: 20,
+                                child: AnimatedBuilder(
+                                  animation: _bounceAnimation,
+                                  builder: (context, child) {
+                                    return Transform.translate(
+                                      offset:
+                                          Offset(0, _bounceAnimation.value * 2),
+                                      child: Icon(Icons.star,
+                                          color: Colors.amber[400], size: 30.0),
+                                    );
+                                  },
                                 ),
                               ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24.0),
+                              Positioned(
+                                bottom: -30,
+                                right: 20,
+                                child: AnimatedBuilder(
+                                  animation: _bounceAnimation,
+                                  builder: (context, child) {
+                                    return Transform.translate(
+                                      offset:
+                                          Offset(0, _bounceAnimation.value * 2),
+                                      child: Icon(Icons.star,
+                                          color: Colors.amber[400], size: 30.0),
+                                    );
+                                  },
+                                ),
+                              ),
+                              Positioned(
+                                top: 20,
+                                right: -20,
+                                child: AnimatedBuilder(
+                                  animation: _bounceAnimation,
+                                  builder: (context, child) {
+                                    return Transform.translate(
+                                      offset:
+                                          Offset(_bounceAnimation.value * 2, 0),
+                                      child: Icon(Icons.favorite,
+                                          color: Colors.pink[300], size: 20.0),
+                                    );
+                                  },
+                                ),
+                              ),
 
-                      // Enhanced feedback area
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(24.0),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [white, Colors.blue.shade50],
-                          ),
-                          borderRadius: BorderRadius.circular(20.0),
-                          border: Border.all(
-                              color: grey.withOpacity(0.3), width: 2.0),
-                          boxShadow: [
-                            BoxShadow(
-                              color: grey.withOpacity(0.2),
-                              blurRadius: 8.0,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: widget.isTeacher!
-                            ? TextWidget(
-                                text: 'Result:',
-                                fontSize: 18,
-                                fontFamily: 'Bold',
-                              )
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      AnimatedBuilder(
-                                        animation: _pulseAnimation,
-                                        builder: (context, child) {
-                                          return Transform.scale(
-                                            scale: _isListening
-                                                ? _pulseAnimation.value
-                                                : 1.0,
-                                            child: Icon(
-                                              _isListening
-                                                  ? Icons.hearing
-                                                  : Icons.mic,
-                                              color: primary,
-                                              size: 32.0,
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                      const SizedBox(width: 12.0),
-                                      TextWidget(
-                                        text: _isListening
-                                            ? 'Listening... 🧏'
-                                            : 'Tap Practice to speak 🗣️',
-                                        fontSize: 22.0,
-                                        color: black,
-                                        isBold: true,
-                                      ),
-                                    ],
+                              // Main content card
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 500),
+                                padding: const EdgeInsets.all(40.0),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: isCurrentItemCompleted
+                                        ? [
+                                            Colors.green.shade100,
+                                            Colors.green.shade200
+                                          ]
+                                        : [white, Colors.blue.shade50],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
                                   ),
-                                  if (_recognizedText.isNotEmpty) ...[
-                                    const SizedBox(height: 12.0),
-                                    TextWidget(
-                                      text: 'Heard: ' + _recognizedText,
-                                      fontSize: 18.0,
-                                      color: black,
-                                      fontFamily: 'Regular',
+                                  borderRadius: BorderRadius.circular(30.0),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: grey.withOpacity(0.4),
+                                      blurRadius: 20.0,
+                                      offset: const Offset(0, 8),
                                     ),
                                   ],
+                                  border: Border.all(
+                                      color: isCurrentItemCompleted
+                                          ? Colors.green
+                                          : primary,
+                                      width: 4.0),
+                                ),
+                                child: Column(
+                                  children: [
+                                    // Emoji display
+                                    Text(
+                                      currentItem['emoji']!,
+                                      style: const TextStyle(fontSize: 50.0),
+                                    ),
+                                    const SizedBox(height: 16.0),
 
-                                  // Incorrect pronunciation feedback
-                                  if (_showIncorrectFeedback) ...[
-                                    const SizedBox(height: 12.0),
-                                    Container(
-                                      padding: const EdgeInsets.all(12.0),
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: _characterFeedback
+                                    // Content text with character feedback
+                                    if (_characterFeedback.isEmpty)
+                                      TextWidget(
+                                        text: currentItem['content']!,
+                                        fontSize: 42.0,
+                                        color: primary,
+                                        isBold: true,
+                                        maxLines: 3,
+                                        align: TextAlign.center,
+                                        fontFamily: 'Regular',
+                                      )
+                                    else if (currentItem['type'] == 'Sentence')
+                                      Wrap(
+                                        alignment: WrapAlignment.center,
+                                        runSpacing: 4.0,
+                                        spacing: 4.0,
+                                        children: () {
+                                          final words = currentItem['content']!
+                                              .split(RegExp(r'\\s+'));
+                                          return List.generate(words.length,
+                                              (index) {
+                                            final word = words[index];
+                                            final String status = index <
+                                                    _characterFeedback.length
+                                                ? _characterFeedback[index]
+                                                : 'missing';
+
+                                            Color bgColor;
+                                            Color borderColor;
+                                            Color textColor;
+
+                                            if (status == 'correct') {
+                                              bgColor =
+                                                  Colors.green.withOpacity(0.2);
+                                              borderColor = Colors.green;
+                                              textColor = Colors.green.shade800;
+                                            } else if (status == 'incorrect') {
+                                              bgColor =
+                                                  Colors.red.withOpacity(0.2);
+                                              borderColor = Colors.red;
+                                              textColor = Colors.red.shade800;
+                                            } else {
+                                              bgColor =
+                                                  Colors.grey.withOpacity(0.1);
+                                              borderColor = Colors.grey;
+                                              textColor = primary;
+                                            }
+
+                                            return Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 6.0,
+                                                vertical: 4.0,
+                                              ),
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 1.0,
+                                                vertical: 2.0,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: bgColor,
+                                                borderRadius:
+                                                    BorderRadius.circular(6.0),
+                                                border: Border.all(
+                                                  color: borderColor,
+                                                  width: 1.5,
+                                                ),
+                                              ),
+                                              child: TextWidget(
+                                                text: word,
+                                                fontSize: 26.0,
+                                                color: textColor,
+                                                isBold: true,
+                                                fontFamily: 'Regular',
+                                              ),
+                                            );
+                                          });
+                                        }(),
+                                      )
+                                    else if (widget.level == 1)
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: List.generate(
+                                          currentItem['content']!.length,
+                                          (index) => Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 4.0,
+                                              vertical: 8.0,
+                                            ),
+                                            margin: const EdgeInsets.symmetric(
+                                              horizontal: 2.0,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: index <
+                                                      _characterFeedback.length
+                                                  ? (_characterFeedback[
+                                                              index] ==
+                                                          'correct'
+                                                      ? Colors.green
+                                                          .withOpacity(0.3)
+                                                      : Colors.red
+                                                          .withOpacity(0.3))
+                                                  : Colors.grey
+                                                      .withOpacity(0.2),
+                                              borderRadius:
+                                                  BorderRadius.circular(8.0),
+                                              border: Border.all(
+                                                color: index <
+                                                        _characterFeedback
+                                                            .length
+                                                    ? (_characterFeedback[
+                                                                index] ==
+                                                            'correct'
+                                                        ? Colors.green
+                                                        : Colors.red)
+                                                    : Colors.grey,
+                                                width: 2.0,
+                                              ),
+                                            ),
+                                            child: TextWidget(
+                                              text: currentItem['content']![
+                                                  index],
+                                              fontSize: 42.0,
+                                              color: index <
+                                                      _characterFeedback.length
+                                                  ? (_characterFeedback[
+                                                              index] ==
+                                                          'correct'
+                                                      ? Colors.green
+                                                      : Colors.red)
+                                                  : primary,
+                                              isBold: true,
+                                              fontFamily: 'Regular',
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                    else
+                                      TextWidget(
+                                        text: currentItem['content']!,
+                                        fontSize: 42.0,
+                                        color: _characterFeedback
+                                                .every((c) => c == 'correct')
+                                            ? Colors.green
+                                            : Colors.red,
+                                        isBold: true,
+                                        maxLines: 3,
+                                        align: TextAlign.center,
+                                        fontFamily: 'Regular',
+                                      ),
+
+                                    if (isCurrentItemCompleted)
+                                      Container(
+                                        margin:
+                                            const EdgeInsets.only(top: 16.0),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 16.0, vertical: 8.0),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Colors.green,
+                                              Colors.green.shade600
+                                            ],
+                                          ),
+                                          borderRadius:
+                                              BorderRadius.circular(20.0),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Icon(Icons.check_circle,
+                                                color: white, size: 24.0),
+                                            const SizedBox(width: 8.0),
+                                            TextWidget(
+                                              text: 'Completed! 🎉',
+                                              fontSize: 16.0,
+                                              color: white,
+                                              isBold: true,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 40.0),
+
+                          // Enhanced progress indicator
+                          Container(
+                            padding: const EdgeInsets.all(16.0),
+                            decoration: BoxDecoration(
+                              color: white.withOpacity(0.8),
+                              borderRadius: BorderRadius.circular(20.0),
+                              border: Border.all(color: grey.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                for (int i = 0; i < practiceItems.length; i++)
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 300),
+                                    margin: const EdgeInsets.symmetric(
+                                        horizontal: 4.0),
+                                    width: 16.0,
+                                    height: 16.0,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _completedItems.contains(i)
+                                          ? Colors.green
+                                          : i == _currentIndex
+                                              ? primary
+                                              : grey.withOpacity(0.3),
+                                      boxShadow: i == _currentIndex
+                                          ? [
+                                              BoxShadow(
+                                                color: primary.withOpacity(0.5),
+                                                blurRadius: 8.0,
+                                                spreadRadius: 2.0,
+                                              ),
+                                            ]
+                                          : null,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24.0),
+
+                          // Enhanced feedback area
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(24.0),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [white, Colors.blue.shade50],
+                              ),
+                              borderRadius: BorderRadius.circular(20.0),
+                              border: Border.all(
+                                  color: grey.withOpacity(0.3), width: 2.0),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: grey.withOpacity(0.2),
+                                  blurRadius: 8.0,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    AnimatedBuilder(
+                                      animation: _pulseAnimation,
+                                      builder: (context, child) {
+                                        return Transform.scale(
+                                          scale: _isListening
+                                              ? _pulseAnimation.value
+                                              : 1.0,
+                                          child: Icon(
+                                            _isListening
+                                                ? Icons.hearing
+                                                : Icons.mic,
+                                            color: primary,
+                                            size: 32.0,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(width: 12.0),
+                                    TextWidget(
+                                      text: _isListening
+                                          ? 'Listening... 🧏'
+                                          : 'Tap Practice to speak 🗣️',
+                                      fontSize: 22.0,
+                                      color: black,
+                                      isBold: true,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12.0),
+                                TextWidget(
+                                  text: _recognizedText.isNotEmpty
+                                      ? 'Heard: ' + _recognizedText
+                                      : 'Heard:',
+                                  fontSize: 18.0,
+                                  color: black,
+                                  fontFamily: 'Regular',
+                                ),
+
+                                // Incorrect pronunciation feedback
+                                if (_showIncorrectFeedback) ...[
+                                  const SizedBox(height: 12.0),
+                                  Container(
+                                    padding: const EdgeInsets.all(12.0),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: _characterFeedback
+                                                    .contains('correct') &&
+                                                _characterFeedback
+                                                    .contains('incorrect')
+                                            ? [
+                                                Colors.amber.shade100,
+                                                Colors.yellow.shade100,
+                                              ]
+                                            : [
+                                                Colors.red.shade100,
+                                                Colors.orange.shade100,
+                                              ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(12.0),
+                                      border: Border.all(
+                                        color: _characterFeedback
+                                                    .contains('correct') &&
+                                                _characterFeedback
+                                                    .contains('incorrect')
+                                            ? Colors.amber.shade300
+                                            : Colors.red.shade300,
+                                        width: 2.0,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          _characterFeedback
                                                       .contains('correct') &&
                                                   _characterFeedback
                                                       .contains('incorrect')
-                                              ? [
-                                                  Colors.amber.shade100,
-                                                  Colors.yellow.shade100,
-                                                ]
-                                              : [
-                                                  Colors.red.shade100,
-                                                  Colors.orange.shade100,
-                                                ],
-                                        ),
-                                        borderRadius:
-                                            BorderRadius.circular(12.0),
-                                        border: Border.all(
+                                              ? Icons.lightbulb_outline
+                                              : Icons.error_outline,
                                           color: _characterFeedback
                                                       .contains('correct') &&
                                                   _characterFeedback
                                                       .contains('incorrect')
-                                              ? Colors.amber.shade300
-                                              : Colors.red.shade300,
-                                          width: 2.0,
+                                              ? Colors.amber.shade600
+                                              : Colors.red.shade600,
+                                          size: 24.0,
                                         ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            _characterFeedback
+                                        const SizedBox(width: 8.0),
+                                        Flexible(
+                                          child: TextWidget(
+                                            text: _characterFeedback
                                                         .contains('correct') &&
                                                     _characterFeedback
                                                         .contains('incorrect')
-                                                ? Icons.lightbulb_outline
-                                                : Icons.error_outline,
+                                                ? _getMixedFeedbackMessage()
+                                                : _getEncouragingMessage(),
+                                            fontSize: 16.0,
                                             color: _characterFeedback
                                                         .contains('correct') &&
                                                     _characterFeedback
                                                         .contains('incorrect')
-                                                ? Colors.amber.shade600
-                                                : Colors.red.shade600,
-                                            size: 24.0,
+                                                ? Colors.amber.shade800
+                                                : Colors.red.shade800,
+                                            isBold: true,
+                                            align: TextAlign.center,
                                           ),
-                                          const SizedBox(width: 8.0),
-                                          Flexible(
-                                            child: TextWidget(
-                                              text: _characterFeedback.contains(
-                                                          'correct') &&
-                                                      _characterFeedback
-                                                          .contains('incorrect')
-                                                  ? _getMixedFeedbackMessage()
-                                                  : _getEncouragingMessage(),
-                                              fontSize: 16.0,
-                                              color: _characterFeedback
-                                                          .contains(
-                                                              'correct') &&
-                                                      _characterFeedback
-                                                          .contains('incorrect')
-                                                  ? Colors.amber.shade800
-                                                  : Colors.red.shade800,
-                                              isBold: true,
-                                              align: TextAlign.center,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                  if (_confidence > 0)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 8.0),
-                                      child: TextWidget(
-                                        text: 'Confidence: ' +
-                                            (100 * _confidence)
-                                                .toStringAsFixed(0) +
-                                            '%',
-                                        fontSize: 14.0,
-                                        color: grey,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                      ),
-                      const SizedBox(height: 20.0),
-
-                      // Skip button - only visible when speech recognition error occurs
-                      if (_hasSpeechError && !isCurrentItemCompleted)
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 20.0),
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              _nextItem(autoStartListening: true);
-                            },
-                            icon:
-                                Icon(Icons.skip_next, color: white, size: 28.0),
-                            label: TextWidget(
-                              text: 'Skip Item ⏭️',
-                              fontSize: 20.0,
-                              color: white,
-                              isBold: true,
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange,
-                              foregroundColor: white,
-                              minimumSize: const Size(double.infinity, 60.0),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16.0),
-                              ),
-                              elevation: 6.0,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 12.0),
-                            ),
-                          ),
-                        ),
-
-                      // Practice Button with enhanced animation
-                      Visibility(
-                        visible: !widget.isTeacher!,
-                        child: ScaleTransition(
-                          scale: _scaleAnimation,
-                          child: ElevatedButton.icon(
-                            onPressed: isCurrentItemCompleted
-                                ? null
-                                : () {
-                                    if (_isListening) {
-                                      _stopListening();
-                                    } else {
-                                      _startListening();
-                                    }
-                                  },
-                            icon: Icon(
-                                isCurrentItemCompleted
-                                    ? Icons.check
-                                    : (_isListening ? Icons.stop : Icons.mic),
-                                color: white,
-                                size: 32.0),
-                            label: TextWidget(
-                              text: isCurrentItemCompleted
-                                  ? 'Completed! 🎉'
-                                  : (_isListening
-                                      ? 'Listening... Tap to stop'
-                                      : (_hasSpeechError
-                                          ? 'Try Again! 🔄'
-                                          : (_incorrectAttempts >= 3
-                                              ? 'Try again! You can do it! 💪'
-                                              : 'Practice Now! 🎤'))),
-                              fontSize: 24.0,
-                              color: white,
-                              isBold: true,
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: isCurrentItemCompleted
-                                  ? Colors.green
-                                  : primary,
-                              foregroundColor: white,
-                              minimumSize: const Size(double.infinity, 80.0),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20.0),
-                              ),
-                              elevation: isCurrentItemCompleted ? 0.0 : 10.0,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 16.0),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20.0),
-
-                      // Next Button with enhanced design
-                      OutlinedButton.icon(
-                        onPressed: _nextItem,
-                        icon: Icon(Icons.arrow_forward,
-                            color: secondary, size: 32.0),
-                        label: TextWidget(
-                          text: 'Next Item ➡️',
-                          fontSize: 24.0,
-                          color: secondary,
-                          isBold: true,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: secondary,
-                          side: BorderSide(color: secondary, width: 3.0),
-                          minimumSize: const Size(double.infinity, 80.0),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20.0),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 16.0),
-                        ),
-                      ),
-                      const SizedBox(height: 24.0),
-
-                      // Fun bottom decoration
-                      Center(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(4, (index) {
-                            return AnimatedBuilder(
-                              animation: _bounceController,
-                              builder: (context, child) {
-                                return Transform.translate(
-                                  offset: Offset(
-                                      0,
-                                      _bounceAnimation.value *
-                                          (index + 1) *
-                                          0.4),
-                                  child: Container(
-                                    margin: const EdgeInsets.symmetric(
-                                        horizontal: 6.0),
-                                    child: Icon(
-                                      Icons.favorite,
-                                      color: Colors.pink[300],
-                                      size: 18.0,
+                                        ),
+                                      ],
                                     ),
                                   ),
+                                ],
+                                if (_characterFeedback.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8.0),
+                                    child: TextWidget(
+                                      text: 'Accuracy: ' +
+                                          _calculateAccuracyPercentage()
+                                              .toStringAsFixed(0) +
+                                          '%',
+                                      fontSize: 14.0,
+                                      color: grey,
+                                      align: TextAlign.center,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20.0),
+
+                          // Skip button - only visible when speech recognition error occurs
+                          if (_hasSpeechError && !isCurrentItemCompleted)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 20.0),
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  _nextItem(autoStartListening: true);
+                                },
+                                icon: Icon(Icons.skip_next,
+                                    color: white, size: 28.0),
+                                label: TextWidget(
+                                  text: 'Skip Item ⏭️',
+                                  fontSize: 20.0,
+                                  color: white,
+                                  isBold: true,
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: white,
+                                  minimumSize:
+                                      const Size(double.infinity, 60.0),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16.0),
+                                  ),
+                                  elevation: 6.0,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 12.0),
+                                ),
+                              ),
+                            ),
+
+                          // Listen button (student must listen before practicing)
+                          Visibility(
+                            visible: !(widget.isTeacher ?? false),
+                            child: Column(
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: _listenCurrentItem,
+                                  icon: Icon(Icons.volume_up,
+                                      color: primary, size: 28.0),
+                                  label: TextWidget(
+                                    text: 'Listen to the word ',
+                                    fontSize: 18.0,
+                                    color: white,
+                                    isBold: true,
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: secondary,
+                                    foregroundColor: white,
+                                    minimumSize:
+                                        const Size(double.infinity, 56.0),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16.0),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16.0),
+                              ],
+                            ),
+                          ),
+
+                          // Practice Button with enhanced animation
+                          Visibility(
+                            visible: !widget.isTeacher!,
+                            child: ScaleTransition(
+                              scale: _scaleAnimation,
+                              child: ElevatedButton.icon(
+                                onPressed: (isCurrentItemCompleted ||
+                                        !_hasListenedCurrentItem)
+                                    ? null
+                                    : () {
+                                        if (_isListening) {
+                                          _stopListening();
+                                        } else {
+                                          _startListening();
+                                        }
+                                      },
+                                icon: Icon(
+                                    isCurrentItemCompleted
+                                        ? Icons.check
+                                        : (_isListening
+                                            ? Icons.stop
+                                            : Icons.mic),
+                                    color: white,
+                                    size: 32.0),
+                                label: TextWidget(
+                                  text: isCurrentItemCompleted
+                                      ? 'Completed! '
+                                      : (!_hasListenedCurrentItem
+                                          ? 'Tap Listen first '
+                                          : (_isListening
+                                              ? 'Listening... Tap to stop'
+                                              : (_incorrectAttempts >= 3
+                                                  ? 'Try again! You can do it! '
+                                                  : 'Practice Now! '))),
+                                  fontSize: 24.0,
+                                  color: white,
+                                  isBold: true,
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isCurrentItemCompleted
+                                      ? Colors.green
+                                      : (_hasListenedCurrentItem
+                                          ? primary
+                                          : primary.withOpacity(0.6)),
+                                  foregroundColor: white,
+                                  minimumSize:
+                                      const Size(double.infinity, 80.0),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20.0),
+                                  ),
+                                  elevation:
+                                      isCurrentItemCompleted ? 0.0 : 10.0,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 16.0),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20.0),
+
+                          // Next Button with enhanced design (teachers only)
+                          Visibility(
+                            visible: widget.isTeacher ?? false,
+                            child: OutlinedButton.icon(
+                              onPressed: _nextItem,
+                              icon: Icon(Icons.arrow_forward,
+                                  color: secondary, size: 32.0),
+                              label: TextWidget(
+                                text: 'Next Item ➡️',
+                                fontSize: 24.0,
+                                color: secondary,
+                                isBold: true,
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: secondary,
+                                side: BorderSide(color: secondary, width: 3.0),
+                                minimumSize: const Size(double.infinity, 80.0),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20.0),
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16.0),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24.0),
+
+                          // Fun bottom decoration
+                          Center(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(4, (index) {
+                                return AnimatedBuilder(
+                                  animation: _bounceController,
+                                  builder: (context, child) {
+                                    return Transform.translate(
+                                      offset: Offset(
+                                          0,
+                                          _bounceAnimation.value *
+                                              (index + 1) *
+                                              0.4),
+                                      child: Container(
+                                        margin: const EdgeInsets.symmetric(
+                                            horizontal: 6.0),
+                                        child: Icon(
+                                          Icons.favorite,
+                                          color: Colors.pink[300],
+                                          size: 18.0,
+                                        ),
+                                      ),
+                                    );
+                                  },
                                 );
-                              },
-                            );
-                          }),
-                        ),
+                              }),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
+        ));
   }
 }
