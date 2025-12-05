@@ -25,6 +25,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   late Animation<double> _cardAnimation;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  String? _selectedSectionFilter;
+
+  // Section list - fruits from A to G
+  final List<String> _sections = [
+    'Apple',
+    'Banana',
+    'Cherry',
+    'Durian',
+    'Elderberry',
+    'Fig',
+    'Guava',
+  ];
 
   final StudentService _studentService = StudentService();
   List<Map<String, dynamic>> _students = [];
@@ -200,82 +212,172 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     super.dispose();
   }
 
-  // Get filtered students based on search query
-  List<Map<String, dynamic>> get filteredStudents {
-    if (_searchQuery.isEmpty) {
-      return _students;
+  // Get emoji for each fruit section
+  String _getSectionEmoji(String section) {
+    switch (section) {
+      case 'Apple':
+        return '🍎';
+      case 'Banana':
+        return '🍌';
+      case 'Cherry':
+        return '🍒';
+      case 'Durian':
+        return '🥭';
+      case 'Elderberry':
+        return '🫐';
+      case 'Fig':
+        return '🍇';
+      case 'Guava':
+        return '🍐';
+      default:
+        return '🍎';
     }
-    return _students
-        .where((student) =>
-            student['name'].toLowerCase().contains(_searchQuery.toLowerCase()))
-        .toList();
+  }
+
+  // Get filtered students based on search query and section filter
+  List<Map<String, dynamic>> get filteredStudents {
+    var filtered = _students;
+
+    // Filter by section if selected
+    if (_selectedSectionFilter != null) {
+      filtered = filtered
+          .where((student) => student['section'] == _selectedSectionFilter)
+          .toList();
+    }
+
+    // Filter by search query
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered
+          .where((student) => student['name']
+              .toLowerCase()
+              .contains(_searchQuery.toLowerCase()))
+          .toList();
+    }
+
+    return filtered;
   }
 
   // Add new student
   Future<void> _addStudent() async {
     final TextEditingController nameController = TextEditingController();
+    String? selectedSection;
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: TextWidget(
-          text: 'Add New Student',
-          fontSize: 20.0,
-          color: primary,
-          isBold: true,
-        ),
-        content: TextField(
-          controller: nameController,
-          decoration: InputDecoration(
-            hintText: 'Student Name',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8.0),
-            ),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: TextWidget(
+            text: 'Add New Student',
+            fontSize: 20.0,
+            color: primary,
+            isBold: true,
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: TextWidget(
-              text: 'Cancel',
-              fontSize: 16.0,
-              color: grey,
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  hintText: 'Student Name',
+                  prefixIcon: Icon(Icons.person, color: primary),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16.0),
+              DropdownButtonFormField<String>(
+                value: selectedSection,
+                hint: TextWidget(
+                  text: 'Select Section',
+                  fontSize: 14.0,
+                  color: grey,
+                ),
+                decoration: InputDecoration(
+                  prefixIcon: Icon(Icons.class_, color: primary),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8.0),
+                  ),
+                ),
+                items: _sections.map((section) {
+                  return DropdownMenuItem<String>(
+                    value: section,
+                    child: Row(
+                      children: [
+                        Text(
+                          _getSectionEmoji(section),
+                          style: const TextStyle(fontSize: 18),
+                        ),
+                        const SizedBox(width: 8),
+                        TextWidget(
+                          text: section,
+                          fontSize: 14.0,
+                          color: black,
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    selectedSection = value;
+                  });
+                },
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameController.text.trim().isNotEmpty) {
-                try {
-                  await _studentService.createStudent(
-                    name: nameController.text.trim(),
-                    teacherId: widget.teacherId,
-                  );
-                  Navigator.pop(context);
-                  _loadStudents();
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: TextWidget(
+                text: 'Cancel',
+                fontSize: 16.0,
+                color: grey,
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (nameController.text.trim().isNotEmpty &&
+                    selectedSection != null) {
+                  try {
+                    await _studentService.createStudent(
+                      name: nameController.text.trim(),
+                      teacherId: widget.teacherId,
+                      section: selectedSection!,
+                    );
+                    Navigator.pop(context);
+                    _loadStudents();
+                    Fluttertoast.showToast(
+                      msg: 'Student added successfully',
+                      backgroundColor: Colors.green,
+                      textColor: white,
+                    );
+                  } catch (e) {
+                    Fluttertoast.showToast(
+                      msg: 'Error adding student',
+                      backgroundColor: Colors.red,
+                      textColor: white,
+                    );
+                  }
+                } else {
                   Fluttertoast.showToast(
-                    msg: 'Student added successfully',
-                    backgroundColor: Colors.green,
-                    textColor: white,
-                  );
-                } catch (e) {
-                  Fluttertoast.showToast(
-                    msg: 'Error adding student',
+                    msg: 'Please fill all fields',
                     backgroundColor: Colors.red,
                     textColor: white,
                   );
                 }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: primary,
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primary,
+              ),
+              child: TextWidget(
+                text: 'Add',
+                fontSize: 16.0,
+                color: white,
+              ),
             ),
-            child: TextWidget(
-              text: 'Add',
-              fontSize: 16.0,
-              color: white,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1420,47 +1522,128 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                 fontFamily: 'Regular',
               ),
               const SizedBox(height: 16.0),
-              // Search Bar
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                decoration: BoxDecoration(
-                  color: white,
-                  borderRadius: BorderRadius.circular(12.0),
-                  border: Border.all(color: secondary, width: 1.0),
-                  boxShadow: [
-                    BoxShadow(
-                      color: grey.withOpacity(0.2),
-                      blurRadius: 4.0,
-                      offset: const Offset(0, 2),
+              // Search Bar and Section Filter Row
+              Row(
+                children: [
+                  // Search Bar
+                  Expanded(
+                    flex: 2,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      decoration: BoxDecoration(
+                        color: white,
+                        borderRadius: BorderRadius.circular(12.0),
+                        border: Border.all(color: secondary, width: 1.0),
+                        boxShadow: [
+                          BoxShadow(
+                            color: grey.withOpacity(0.2),
+                            blurRadius: 4.0,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Search students...',
+                          hintStyle:
+                              TextStyle(color: grey, fontFamily: 'Regular'),
+                          prefixIcon: Icon(Icons.search, color: primary),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: Icon(Icons.clear, color: grey),
+                                  onPressed: () {
+                                    setState(() {
+                                      _searchController.clear();
+                                      _searchQuery = '';
+                                    });
+                                  },
+                                )
+                              : null,
+                          border: InputBorder.none,
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 12.0),
+                        ),
+                      ),
                     ),
-                  ],
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value;
-                    });
-                  },
-                  decoration: InputDecoration(
-                    hintText: 'Search students...',
-                    hintStyle: TextStyle(color: grey, fontFamily: 'Regular'),
-                    prefixIcon: Icon(Icons.search, color: primary),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(Icons.clear, color: grey),
-                            onPressed: () {
-                              setState(() {
-                                _searchController.clear();
-                                _searchQuery = '';
-                              });
-                            },
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 12.0),
                   ),
-                ),
+                  const SizedBox(width: 12.0),
+                  // Section Filter Dropdown
+                  Expanded(
+                    flex: 1,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      decoration: BoxDecoration(
+                        color: white,
+                        borderRadius: BorderRadius.circular(12.0),
+                        border: Border.all(color: secondary, width: 1.0),
+                        boxShadow: [
+                          BoxShadow(
+                            color: grey.withOpacity(0.2),
+                            blurRadius: 4.0,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedSectionFilter,
+                          hint: Row(
+                            children: [
+                              Icon(Icons.filter_list, color: primary, size: 20),
+                              const SizedBox(width: 4),
+                              TextWidget(
+                                text: 'Section',
+                                fontSize: 14.0,
+                                color: grey,
+                              ),
+                            ],
+                          ),
+                          isExpanded: true,
+                          items: [
+                            DropdownMenuItem<String>(
+                              value: null,
+                              child: TextWidget(
+                                text: 'All Sections',
+                                fontSize: 14.0,
+                                color: black,
+                              ),
+                            ),
+                            ..._sections.map((section) {
+                              return DropdownMenuItem<String>(
+                                value: section,
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      _getSectionEmoji(section),
+                                      style: const TextStyle(fontSize: 16),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    TextWidget(
+                                      text: section,
+                                      fontSize: 14.0,
+                                      color: black,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ],
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedSectionFilter = value;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16.0),
               // Student List with Level Progress
@@ -1472,147 +1655,187 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                       ),
                     )
                   : ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: filteredStudents.length,
-                itemBuilder: (context, index) {
-                  final student = filteredStudents[index];
-                  final completedLevels = 1;
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: filteredStudents.length,
+                      itemBuilder: (context, index) {
+                        final student = filteredStudents[index];
+                        final completedLevels = 1;
 
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 16.0),
-                    decoration: BoxDecoration(
-                      color: white,
-                      borderRadius: BorderRadius.circular(16.0),
-                      border: Border.all(color: secondary, width: 2.0),
-                      boxShadow: [
-                        BoxShadow(
-                          color: grey.withOpacity(0.3),
-                          blurRadius: 8.0,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: ExpansionTile(
-                      leading: CircleAvatar(
-                        backgroundColor: primary,
-                        child: TextWidget(
-                          text: student['name'][0],
-                          fontSize: 18.0,
-                          color: white,
-                          isBold: true,
-                        ),
-                      ),
-                      title: TextWidget(
-                        text: student['name'],
-                        fontSize: 20.0,
-                        color: black,
-                        isBold: true,
-                        fontFamily: 'Regular',
-                      ),
-                      subtitle: TextWidget(
-                        text: '$completedLevels/5 levels completed',
-                        fontSize: 14.0,
-                        color: grey,
-                        fontFamily: 'Regular',
-                      ),
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            children: [
-                              // Level progress bars
-                              ...List.generate(5, (levelIndex) {
-                                final levelNumber = levelIndex + 1;
-                                final levelData =
-                                    student['levelProgress'][levelNumber];
-                                final isCompleted = levelData != null &&
-                                    levelData['completed'] == true;
-
-                                return GestureDetector(
-                                  onTap: () {
-                                    _showStudentLevelHistory(
-                                      student['name'],
-                                      levelNumber,
-                                      levelData,
-                                    );
-                                  },
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 12.0),
-                                    padding: const EdgeInsets.all(12.0),
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 16.0),
+                          decoration: BoxDecoration(
+                            color: white,
+                            borderRadius: BorderRadius.circular(16.0),
+                            border: Border.all(color: secondary, width: 2.0),
+                            boxShadow: [
+                              BoxShadow(
+                                color: grey.withOpacity(0.3),
+                                blurRadius: 8.0,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: ExpansionTile(
+                            leading: CircleAvatar(
+                              backgroundColor: primary,
+                              child: TextWidget(
+                                text: student['name'][0],
+                                fontSize: 18.0,
+                                color: white,
+                                isBold: true,
+                              ),
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(
+                                  child: TextWidget(
+                                    text: student['name'],
+                                    fontSize: 20.0,
+                                    color: black,
+                                    isBold: true,
+                                    fontFamily: 'Regular',
+                                  ),
+                                ),
+                                // Section badge
+                                if (student['section'] != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8.0,
+                                      vertical: 4.0,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: isCompleted
-                                          ? levels[levelIndex]['color']
-                                              .withOpacity(0.1)
-                                          : grey.withOpacity(0.1),
+                                      color: secondary.withOpacity(0.2),
                                       borderRadius: BorderRadius.circular(12.0),
-                                      border: Border.all(
-                                        color: isCompleted
-                                            ? levels[levelIndex]['color']
-                                            : grey,
-                                        width: 1.0,
-                                      ),
+                                      border: Border.all(color: secondary),
                                     ),
                                     child: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(
-                                          isCompleted
-                                              ? Icons.check_circle
-                                              : Icons.lock,
-                                          color: isCompleted
-                                              ? levels[levelIndex]['color']
-                                              : grey,
-                                          size: 24.0,
+                                        Text(
+                                          _getSectionEmoji(student['section']),
+                                          style: const TextStyle(fontSize: 14),
                                         ),
-                                        const SizedBox(width: 12.0),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              TextWidget(
-                                                text:
-                                                    'Level $levelNumber - ${levels[levelIndex]['description']}',
-                                                fontSize: 16.0,
-                                                color: isCompleted
-                                                    ? levels[levelIndex]
-                                                        ['color']
-                                                    : grey,
-                                                isBold: true,
-                                              ),
-                                              if (isCompleted &&
-                                                  levelData != null) ...[
-                                                const SizedBox(height: 4.0),
-                                                TextWidget(
-                                                  text:
-                                                      'Score: ${levelData['score']}/${levelData['totalItems']} • ${levelData['date'] ?? 'Unknown'}',
-                                                  fontSize: 14.0,
-                                                  color: grey,
-                                                ),
-                                              ],
-                                            ],
-                                          ),
-                                        ),
-                                        Icon(
-                                          Icons.arrow_forward_ios,
-                                          color: isCompleted
-                                              ? levels[levelIndex]['color']
-                                              : grey,
-                                          size: 16.0,
+                                        const SizedBox(width: 4),
+                                        TextWidget(
+                                          text: student['section'],
+                                          fontSize: 12.0,
+                                          color: primary,
+                                          isBold: true,
                                         ),
                                       ],
                                     ),
                                   ),
-                                );
-                              }),
+                              ],
+                            ),
+                            subtitle: TextWidget(
+                              text: '$completedLevels/5 levels completed',
+                              fontSize: 14.0,
+                              color: grey,
+                              fontFamily: 'Regular',
+                            ),
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  children: [
+                                    // Level progress bars
+                                    ...List.generate(5, (levelIndex) {
+                                      final levelNumber = levelIndex + 1;
+                                      final levelData =
+                                          student['levelProgress'][levelNumber];
+                                      final isCompleted = levelData != null &&
+                                          levelData['completed'] == true;
+
+                                      return GestureDetector(
+                                        onTap: () {
+                                          _showStudentLevelHistory(
+                                            student['name'],
+                                            levelNumber,
+                                            levelData,
+                                          );
+                                        },
+                                        child: Container(
+                                          margin: const EdgeInsets.only(
+                                              bottom: 12.0),
+                                          padding: const EdgeInsets.all(12.0),
+                                          decoration: BoxDecoration(
+                                            color: isCompleted
+                                                ? levels[levelIndex]['color']
+                                                    .withOpacity(0.1)
+                                                : grey.withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(12.0),
+                                            border: Border.all(
+                                              color: isCompleted
+                                                  ? levels[levelIndex]['color']
+                                                  : grey,
+                                              width: 1.0,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                isCompleted
+                                                    ? Icons.check_circle
+                                                    : Icons.lock,
+                                                color: isCompleted
+                                                    ? levels[levelIndex]
+                                                        ['color']
+                                                    : grey,
+                                                size: 24.0,
+                                              ),
+                                              const SizedBox(width: 12.0),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    TextWidget(
+                                                      text:
+                                                          'Level $levelNumber - ${levels[levelIndex]['description']}',
+                                                      fontSize: 16.0,
+                                                      color: isCompleted
+                                                          ? levels[levelIndex]
+                                                              ['color']
+                                                          : grey,
+                                                      isBold: true,
+                                                    ),
+                                                    if (isCompleted &&
+                                                        levelData != null) ...[
+                                                      const SizedBox(
+                                                          height: 4.0),
+                                                      TextWidget(
+                                                        text:
+                                                            'Score: ${levelData['score']}/${levelData['totalItems']} • ${levelData['date'] ?? 'Unknown'}',
+                                                        fontSize: 14.0,
+                                                        color: grey,
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                              ),
+                                              Icon(
+                                                Icons.arrow_forward_ios,
+                                                color: isCompleted
+                                                    ? levels[levelIndex]
+                                                        ['color']
+                                                    : grey,
+                                                size: 16.0,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }),
+                                  ],
+                                ),
+                              ),
                             ],
                           ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ],
           ),
         ),

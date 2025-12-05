@@ -23,6 +23,18 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _showTeacherLogin = false;
   bool _isLoading = false;
 
+  // Section dropdown - fruits from A to G
+  final List<String> _sections = [
+    'Apple',
+    'Banana',
+    'Cherry',
+    'Durian',
+    'Elderberry',
+    'Fig',
+    'Guava',
+  ];
+  String? _selectedSection;
+
   final AuthService _authService = AuthService();
   final StudentService _studentService = StudentService();
 
@@ -32,6 +44,28 @@ class _LoginScreenState extends State<LoginScreen> {
     _passwordController.dispose();
     _studentNameController.dispose();
     super.dispose();
+  }
+
+  // Get emoji for each fruit section
+  String _getSectionEmoji(String section) {
+    switch (section) {
+      case 'Apple':
+        return '🍎';
+      case 'Banana':
+        return '🍌';
+      case 'Cherry':
+        return '🍒';
+      case 'Durian':
+        return '🥭';
+      case 'Elderberry':
+        return '🫐';
+      case 'Fig':
+        return '🍇';
+      case 'Guava':
+        return '🍐';
+      default:
+        return '🍎';
+    }
   }
 
   // Handle student login/creation
@@ -45,15 +79,25 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    if (_selectedSection == null) {
+      Fluttertoast.showToast(
+        msg: 'Please select a section',
+        backgroundColor: Colors.red,
+        textColor: white,
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Find or create student with default teacher
+      // Find or create student with default teacher and section
       await _studentService.findOrCreateStudent(
         name: _studentNameController.text.trim(),
         teacherId: 'default_teacher',
+        section: _selectedSection!,
       );
 
       // Save student name to SharedPreferences
@@ -177,7 +221,7 @@ class _LoginScreenState extends State<LoginScreen> {
               // Teacher login fields (shown only when Continue as Teacher is clicked)
               if (!_showTeacherLogin) ...[
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 20),
+                  padding: const EdgeInsets.only(bottom: 16),
                   child: TextField(
                     onChanged: (value) {
                       setState(() {});
@@ -198,7 +242,56 @@ class _LoginScreenState extends State<LoginScreen> {
                         borderSide: BorderSide(color: primary, width: 2.0),
                       ),
                     ),
-                    keyboardType: TextInputType.emailAddress,
+                    keyboardType: TextInputType.name,
+                  ),
+                ),
+                // Section dropdown
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 20),
+                  child: DropdownButtonFormField<String>(
+                    value: _selectedSection,
+                    hint: TextWidget(
+                      text: 'Select Section',
+                      fontSize: 16.0,
+                      color: grey,
+                    ),
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: white,
+                      prefixIcon: Icon(Icons.class_, color: primary),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.0),
+                        borderSide: BorderSide(color: grey),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12.0),
+                        borderSide: BorderSide(color: primary, width: 2.0),
+                      ),
+                    ),
+                    items: _sections.map((section) {
+                      return DropdownMenuItem<String>(
+                        value: section,
+                        child: Row(
+                          children: [
+                            Text(
+                              _getSectionEmoji(section),
+                              style: const TextStyle(fontSize: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            TextWidget(
+                              text: section,
+                              fontSize: 16.0,
+                              color: black,
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedSection = value;
+                      });
+                    },
                   ),
                 ),
               ],
@@ -273,7 +366,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               _showTeacherLogin = false;
                             });
                           }
-                        : _studentNameController.text.trim().isEmpty
+                        : (_studentNameController.text.trim().isEmpty ||
+                                _selectedSection == null)
                             ? null
                             : _handleStudentLogin,
                 style: ElevatedButton.styleFrom(

@@ -68,6 +68,9 @@ class _PracticeScreenState extends State<PracticeScreen>
   Timer? _incorrectFeedbackTimer;
   List<String> _characterFeedback = [];
 
+  // Speech recognition error tracking
+  bool _hasSpeechError = false;
+
   // Services
   final StudentService _studentService = StudentService();
 
@@ -503,16 +506,21 @@ class _PracticeScreenState extends State<PracticeScreen>
       onStatus: _onSpeechStatus,
       onError: (error) {
         debugPrint('Speech error: $error');
-        // Show user-friendly error for Filipino children
+        // Set speech error flag so skip button appears
         if (mounted) {
+          setState(() {
+            _hasSpeechError = true;
+            _isListening = false;
+          });
+          // Show user-friendly error for Filipino children
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Hindi ma-recognize ang speech. Subukan ulit! (Speech not recognized. Try again!)',
+                'Hindi ma-recognize ang speech. Pwede mong i-skip! (Speech not recognized. You can skip!)',
                 style: TextStyle(fontFamily: 'Regular'),
               ),
               backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 3),
+              duration: const Duration(seconds: 4),
             ),
           );
         }
@@ -552,6 +560,8 @@ class _PracticeScreenState extends State<PracticeScreen>
       _confidence = 0.0;
       _isListening = true;
       _soundLevel = 0.0;
+      _hasSpeechError =
+          false; // Reset error flag when starting new listening session
     });
     await _speech.listen(
       onResult: _onSpeechResult,
@@ -857,15 +867,32 @@ class _PracticeScreenState extends State<PracticeScreen>
     super.dispose();
   }
 
-  void _nextItem() {
+  void _nextItem({bool autoStartListening = false}) {
+    // Always stop/reset speech service to ensure it's ready for next item
+    // This is important after speech errors where _isListening may be false but service needs reset
+    _speech.stop();
+
     setState(() {
       _currentIndex = (_currentIndex + 1) % practiceItems.length;
-      // Reset character feedback when moving to next item
+      // Reset all state for fresh start on next item
       _characterFeedback = [];
       _showIncorrectFeedback = false;
+      _hasSpeechError = false;
+      _recognizedText = '';
+      _confidence = 0.0;
+      _incorrectAttempts = 0;
+      _isListening = false;
+      _soundLevel = 0.0;
     });
-    if (_isListening) {
-      _stopListening();
+
+    // Auto-start listening for next item if requested (e.g., after skip)
+    if (autoStartListening && _speechAvailable) {
+      // Small delay to ensure UI updates before starting
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          _startListening();
+        }
+      });
     }
   }
 
@@ -1745,7 +1772,37 @@ class _PracticeScreenState extends State<PracticeScreen>
                                 ],
                               ),
                       ),
-                      const SizedBox(height: 40.0),
+                      const SizedBox(height: 20.0),
+
+                      // Skip button - only visible when speech recognition error occurs
+                      if (_hasSpeechError && !isCurrentItemCompleted)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 20.0),
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              _nextItem(autoStartListening: true);
+                            },
+                            icon:
+                                Icon(Icons.skip_next, color: white, size: 28.0),
+                            label: TextWidget(
+                              text: 'Skip Item ⏭️',
+                              fontSize: 20.0,
+                              color: white,
+                              isBold: true,
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.orange,
+                              foregroundColor: white,
+                              minimumSize: const Size(double.infinity, 60.0),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16.0),
+                              ),
+                              elevation: 6.0,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12.0),
+                            ),
+                          ),
+                        ),
 
                       // Practice Button with enhanced animation
                       Visibility(
@@ -1773,9 +1830,11 @@ class _PracticeScreenState extends State<PracticeScreen>
                                   ? 'Completed! 🎉'
                                   : (_isListening
                                       ? 'Listening... Tap to stop'
-                                      : (_incorrectAttempts >= 3
-                                          ? 'Try again! You can do it! 💪'
-                                          : 'Practice Now! 🎤')),
+                                      : (_hasSpeechError
+                                          ? 'Try Again! 🔄'
+                                          : (_incorrectAttempts >= 3
+                                              ? 'Try again! You can do it! 💪'
+                                              : 'Practice Now! 🎤'))),
                               fontSize: 24.0,
                               color: white,
                               isBold: true,

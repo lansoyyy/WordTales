@@ -10,11 +10,13 @@ class StudentService {
   Future<String> createStudent({
     required String name,
     required String teacherId,
+    required String section,
   }) async {
     try {
       final docRef = await _firestore.collection(_studentsCollection).add({
         'name': name,
         'teacherId': teacherId,
+        'section': section,
         'createdAt': FieldValue.serverTimestamp(),
         'isActive': true,
         'levelProgress': {
@@ -76,15 +78,21 @@ class StudentService {
   Future<Map<String, dynamic>?> getStudentByName({
     required String name,
     required String teacherId,
+    String? section,
   }) async {
     try {
-      final querySnapshot = await _firestore
+      var query = _firestore
           .collection(_studentsCollection)
           .where('name', isEqualTo: name)
           .where('teacherId', isEqualTo: teacherId)
-          .where('isActive', isEqualTo: true)
-          .limit(1)
-          .get();
+          .where('isActive', isEqualTo: true);
+
+      // If section is provided, filter by section too
+      if (section != null) {
+        query = query.where('section', isEqualTo: section);
+      }
+
+      final querySnapshot = await query.limit(1).get();
 
       if (querySnapshot.docs.isNotEmpty) {
         final data = querySnapshot.docs.first.data();
@@ -102,12 +110,14 @@ class StudentService {
   Future<Map<String, dynamic>> findOrCreateStudent({
     required String name,
     required String teacherId,
+    required String section,
   }) async {
     try {
-      // First, try to find existing student
+      // First, try to find existing student with same name and section
       final existingStudent = await getStudentByName(
         name: name,
         teacherId: teacherId,
+        section: section,
       );
 
       if (existingStudent != null) {
@@ -119,6 +129,7 @@ class StudentService {
       final studentId = await createStudent(
         name: name,
         teacherId: teacherId,
+        section: section,
       );
 
       // Return the newly created student
@@ -226,8 +237,7 @@ class StudentService {
   }
 
   // Stream students for real-time updates
-  Stream<List<Map<String, dynamic>>> streamStudentsByTeacher(
-      String teacherId) {
+  Stream<List<Map<String, dynamic>>> streamStudentsByTeacher(String teacherId) {
     return _firestore
         .collection(_studentsCollection)
         .where('teacherId', isEqualTo: teacherId)
