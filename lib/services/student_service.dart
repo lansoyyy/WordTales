@@ -215,6 +215,68 @@ class StudentService {
     }
   }
 
+  // Reset student's level progress (all levels or specific level)
+  Future<void> resetStudentProgress(String studentId, {int? level}) async {
+    try {
+      if (level != null) {
+        // Reset specific level
+        await _firestore.collection(_studentsCollection).doc(studentId).update({
+          'levelProgress.$level': {
+            'completed': false,
+            'score': 0,
+            'totalItems': level == 1
+                ? 5
+                : level == 2
+                    ? 10
+                    : level == 3
+                        ? 15
+                        : 20,
+            'date': null,
+          }
+        });
+      } else {
+        // Reset all levels
+        await _firestore.collection(_studentsCollection).doc(studentId).update({
+          'levelProgress': {
+            '1': {
+              'completed': false,
+              'score': 0,
+              'totalItems': 5,
+              'date': null
+            },
+            '2': {
+              'completed': false,
+              'score': 0,
+              'totalItems': 10,
+              'date': null
+            },
+            '3': {
+              'completed': false,
+              'score': 0,
+              'totalItems': 15,
+              'date': null
+            },
+            '4': {
+              'completed': false,
+              'score': 0,
+              'totalItems': 20,
+              'date': null
+            },
+            '5': {
+              'completed': false,
+              'score': 0,
+              'totalItems': 20,
+              'date': null
+            },
+          },
+        });
+      }
+    } catch (e) {
+      print('Error resetting student progress: $e');
+      rethrow;
+    }
+  }
+
   // Delete student (soft delete)
   Future<void> deleteStudent(String studentId) async {
     try {

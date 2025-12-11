@@ -704,7 +704,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       _stopListening();
       if (!_completedItems.contains(_currentIndex) &&
           !_failedItems.contains(_currentIndex)) {
-        _markCurrentItemAsCompleted();
+        _markCurrentItemAsCorrect();
       }
       return;
     }
@@ -714,35 +714,19 @@ class _PracticeScreenState extends State<PracticeScreen>
       return;
     }
 
+    _stopListening();
+
     if (isMatch) {
-      _stopListening();
+      // Correct answer - add to score and proceed
       if (!_completedItems.contains(_currentIndex) &&
           !_failedItems.contains(_currentIndex)) {
-        _markCurrentItemAsCompleted();
+        _markCurrentItemAsCorrect();
       }
     } else if (_recognizedText.isNotEmpty) {
-      // Check if the speech contains both correct and incorrect parts
-      final hasCorrectParts = _hasCorrectComponents(target, _recognizedText);
-      final hasIncorrectParts =
-          _hasIncorrectComponents(target, _recognizedText);
-
-      if (hasCorrectParts && hasIncorrectParts) {
-        // Mixed pronunciation - provide specific feedback
-        _showMixedFeedbackMessage();
-      } else {
-        // Show incorrect feedback
-        _showIncorrectFeedbackMessage();
-      }
-
-      // If this is the 3rd incorrect attempt for this item, mark it as failed
-      if (_incorrectAttempts >= 3 &&
-          !_completedItems.contains(_currentIndex) &&
+      // Incorrect answer - mark as failed and proceed
+      if (!_completedItems.contains(_currentIndex) &&
           !_failedItems.contains(_currentIndex)) {
-        _stopListening();
-        setState(() {
-          _failedItems.add(_currentIndex);
-        });
-        _checkLevelCompletion();
+        _markCurrentItemAsIncorrect();
       }
     }
   }
@@ -1326,6 +1310,110 @@ class _PracticeScreenState extends State<PracticeScreen>
         _completedItems.length < practiceItems.length) {
       _showNextItemPopup();
     }
+  }
+
+  // Mark current item as correct - add score and auto-proceed
+  void _markCurrentItemAsCorrect() {
+    setState(() {
+      _failedItems.remove(_currentIndex);
+      _completedItems.add(_currentIndex);
+      _score += 1;
+      _showIncorrectFeedback = false;
+    });
+
+    // Show brief correct feedback then auto-proceed
+    _showResultAndProceed(isCorrect: true);
+  }
+
+  // Mark current item as incorrect - no score, auto-proceed
+  void _markCurrentItemAsIncorrect() {
+    setState(() {
+      _completedItems.remove(_currentIndex);
+      _failedItems.add(_currentIndex);
+      _showIncorrectFeedback = true;
+    });
+
+    // Show brief incorrect feedback then auto-proceed
+    _showResultAndProceed(isCorrect: false);
+  }
+
+  // Show result feedback dialog and auto-proceed to next item
+  void _showResultAndProceed({required bool isCorrect}) {
+    if (!mounted) return;
+    if (widget.isTeacher ?? false) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        // Auto-dismiss after 1.5 seconds
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (mounted && Navigator.canPop(context)) {
+            Navigator.of(context).pop();
+          }
+        });
+
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24.0),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isCorrect ? Icons.check_circle : Icons.cancel,
+                  color: isCorrect ? Colors.green : Colors.red,
+                  size: 80.0,
+                ),
+                const SizedBox(height: 16.0),
+                TextWidget(
+                  text: isCorrect ? 'Correct! 🎉' : 'Incorrect 😔',
+                  fontSize: 28.0,
+                  color: isCorrect ? Colors.green : Colors.red,
+                  isBold: true,
+                  fontFamily: 'Regular',
+                  align: TextAlign.center,
+                ),
+                const SizedBox(height: 8.0),
+                TextWidget(
+                  text: isCorrect ? '+1 Point!' : 'Keep practicing!',
+                  fontSize: 18.0,
+                  color: grey,
+                  fontFamily: 'Regular',
+                  align: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ).then((_) {
+      // After dialog closes, check level completion or proceed to next
+      _checkLevelCompletion();
+      if (_completedItems.length + _failedItems.length < practiceItems.length) {
+        _proceedToNextItem();
+      }
+    });
+  }
+
+  // Proceed to next item without marking current as failed
+  void _proceedToNextItem() {
+    _speech.stop();
+
+    setState(() {
+      _currentIndex = (_currentIndex + 1) % practiceItems.length;
+      _characterFeedback = [];
+      _showIncorrectFeedback = false;
+      _hasSpeechError = false;
+      _incorrectAttempts = 0;
+      _recognizedText = '';
+      _confidence = 0.0;
+      _hasListenedCurrentItem = false;
+      _isListening = false;
+      _soundLevel = 0.0;
+    });
   }
 
   void _checkLevelCompletion() {
@@ -2393,35 +2481,35 @@ class _PracticeScreenState extends State<PracticeScreen>
                               ),
                             ),
 
-                          // Listen button (student must listen before practicing)
-                          Visibility(
-                            visible: !(widget.isTeacher ?? false),
-                            child: Column(
-                              children: [
-                                ElevatedButton.icon(
-                                  onPressed: _listenCurrentItem,
-                                  icon: Icon(Icons.volume_up,
-                                      color: primary, size: 28.0),
-                                  label: TextWidget(
-                                    text: 'Listen to the word ',
-                                    fontSize: 18.0,
-                                    color: white,
-                                    isBold: true,
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: secondary,
-                                    foregroundColor: white,
-                                    minimumSize:
-                                        const Size(double.infinity, 56.0),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16.0),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 16.0),
-                              ],
-                            ),
-                          ),
+                          // // Listen button (student must listen before practicing)
+                          // Visibility(
+                          //   visible: !(widget.isTeacher ?? false),
+                          //   child: Column(
+                          //     children: [
+                          //       ElevatedButton.icon(
+                          //         onPressed: _listenCurrentItem,
+                          //         icon: Icon(Icons.volume_up,
+                          //             color: primary, size: 28.0),
+                          //         label: TextWidget(
+                          //           text: 'Listen to the word ',
+                          //           fontSize: 18.0,
+                          //           color: white,
+                          //           isBold: true,
+                          //         ),
+                          //         style: ElevatedButton.styleFrom(
+                          //           backgroundColor: secondary,
+                          //           foregroundColor: white,
+                          //           minimumSize:
+                          //               const Size(double.infinity, 56.0),
+                          //           shape: RoundedRectangleBorder(
+                          //             borderRadius: BorderRadius.circular(16.0),
+                          //           ),
+                          //         ),
+                          //       ),
+                          //       const SizedBox(height: 16.0),
+                          //     ],
+                          //   ),
+                          // ),
 
                           // Practice Button with enhanced animation
                           Visibility(

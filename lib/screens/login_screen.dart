@@ -162,6 +162,66 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (teacher != null) {
+        // Check if teacher account is verified
+        final isVerified = teacher['isVerified'] ?? false;
+
+        if (!isVerified) {
+          if (mounted) {
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20.0),
+                ),
+                title: Column(
+                  children: [
+                    Icon(Icons.hourglass_empty,
+                        color: Colors.orange, size: 60.0),
+                    const SizedBox(height: 16.0),
+                    TextWidget(
+                      text: 'Account Not Verified',
+                      fontSize: 20.0,
+                      color: primary,
+                      isBold: true,
+                      align: TextAlign.center,
+                    ),
+                  ],
+                ),
+                content: TextWidget(
+                  text:
+                      'Your account is still pending verification. Please wait for admin approval before you can log in.',
+                  fontSize: 16.0,
+                  color: grey,
+                  align: TextAlign.center,
+                ),
+                actions: [
+                  Center(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12.0),
+                        ),
+                      ),
+                      child: TextWidget(
+                        text: 'OK',
+                        fontSize: 16.0,
+                        color: white,
+                        isBold: true,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          return;
+        }
+
         Fluttertoast.showToast(
           msg: 'Welcome ${teacher['name']}!',
           backgroundColor: Colors.green,

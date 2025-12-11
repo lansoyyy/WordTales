@@ -125,6 +125,7 @@ class AuthService {
         'name': name,
         'createdAt': FieldValue.serverTimestamp(),
         'isActive': true,
+        'isVerified': false, // Teachers start unverified until admin approves
       });
 
       final teacherData = {
@@ -132,12 +133,28 @@ class AuthService {
         'email': email,
         'name': name,
         'isActive': true,
+        'isVerified': false,
       };
 
       return teacherData;
     } catch (e) {
       print('Error creating teacher: $e');
       rethrow;
+    }
+  }
+
+  // Check if teacher is verified
+  Future<bool> isTeacherVerified(String teacherId) async {
+    try {
+      final doc =
+          await _firestore.collection(_teachersCollection).doc(teacherId).get();
+      if (doc.exists) {
+        return doc.data()?['isVerified'] ?? false;
+      }
+      return false;
+    } catch (e) {
+      print('Error checking teacher verification: $e');
+      return false;
     }
   }
 }

@@ -708,8 +708,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     );
   }
 
-  void _showStudentLevelHistory(
-      String studentName, int levelNumber, Map<String, dynamic> levelData) {
+  void _showStudentLevelHistory(String studentId, String studentName,
+      int levelNumber, Map<String, dynamic> levelData) {
     // Extract per-item results (which items were completed or failed)
     final dynamic results = levelData['results'];
     final Set<int> completedItems = <int>{};
@@ -941,8 +941,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                       icon: Icon(Icons.play_arrow,
                           color: levels[levelNumber - 1]['color']),
                       label: TextWidget(
-                        text: 'Practice Level',
-                        fontSize: 16.0,
+                        text: 'Practice',
+                        fontSize: 14.0,
                         color: levels[levelNumber - 1]['color'],
                         isBold: true,
                       ),
@@ -955,14 +955,98 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12.0),
+                  const SizedBox(width: 8.0),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        // Show confirmation dialog
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16.0),
+                            ),
+                            title: TextWidget(
+                              text: 'Reset Score',
+                              fontSize: 20.0,
+                              color: Colors.red,
+                              isBold: true,
+                            ),
+                            content: TextWidget(
+                              text:
+                                  'Are you sure you want to reset ${studentName}\'s progress for Level $levelNumber? This action cannot be undone.',
+                              fontSize: 16.0,
+                              color: grey,
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: TextWidget(
+                                  text: 'Cancel',
+                                  fontSize: 16.0,
+                                  color: grey,
+                                ),
+                              ),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                ),
+                                child: TextWidget(
+                                  text: 'Reset',
+                                  fontSize: 16.0,
+                                  color: white,
+                                  isBold: true,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (confirmed == true) {
+                          try {
+                            await _studentService.resetStudentProgress(
+                                studentId,
+                                level: levelNumber);
+                            Navigator.pop(context);
+                            _loadStudents(); // Reload to reflect changes
+                            Fluttertoast.showToast(
+                              msg: 'Score reset successfully',
+                              backgroundColor: Colors.green,
+                              textColor: white,
+                            );
+                          } catch (e) {
+                            Fluttertoast.showToast(
+                              msg: 'Error resetting score',
+                              backgroundColor: Colors.red,
+                              textColor: white,
+                            );
+                          }
+                        }
+                      },
+                      icon: Icon(Icons.refresh, color: white, size: 18),
+                      label: TextWidget(
+                        text: 'Reset',
+                        fontSize: 14.0,
+                        color: white,
+                        isBold: true,
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8.0),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8.0),
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close, color: white),
+                      icon: Icon(Icons.close, color: white, size: 18),
                       label: TextWidget(
                         text: 'Close',
-                        fontSize: 16.0,
+                        fontSize: 14.0,
                         color: white,
                         isBold: true,
                       ),
@@ -1848,6 +1932,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                       return GestureDetector(
                                         onTap: () {
                                           _showStudentLevelHistory(
+                                            student['id'],
                                             student['name'],
                                             levelNumber,
                                             levelData ??
@@ -1944,17 +2029,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                     ),
             ],
           ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addStudent,
-        backgroundColor: primary,
-        icon: Icon(Icons.person_add, color: white),
-        label: TextWidget(
-          text: 'Add Student',
-          fontSize: 16.0,
-          color: white,
-          isBold: true,
         ),
       ),
     );
