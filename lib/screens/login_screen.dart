@@ -24,15 +24,23 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _showTeacherLogin = false;
   bool _isLoading = false;
 
-  // Section dropdown - fruits from A to G
+  // Section dropdown - matching teacher sections
   final List<String> _sections = [
     'Apple',
-    'Banana',
-    'Cherry',
+    'Atis',
+    'Chico',
     'Durian',
-    'Elderberry',
-    'Fig',
+    'Grapes',
     'Guava',
+    'Lemon',
+    'Makopa',
+    'Mango',
+    'Melon',
+    'Orange',
+    'Pear',
+    'Pomelo',
+    'Strawberry',
+    'Tambis',
   ];
   String? _selectedSection;
 
@@ -52,18 +60,34 @@ class _LoginScreenState extends State<LoginScreen> {
     switch (section) {
       case 'Apple':
         return '🍎';
-      case 'Banana':
-        return '🍌';
-      case 'Cherry':
-        return '🍒';
+      case 'Atis':
+        return '🍈';
+      case 'Chico':
+        return '🥝';
       case 'Durian':
         return '🥭';
-      case 'Elderberry':
-        return '🫐';
-      case 'Fig':
+      case 'Grapes':
         return '🍇';
       case 'Guava':
         return '🍐';
+      case 'Lemon':
+        return '🍋';
+      case 'Makopa':
+        return '🍑';
+      case 'Mango':
+        return '🥭';
+      case 'Melon':
+        return '🍈';
+      case 'Orange':
+        return '🍊';
+      case 'Pear':
+        return '🍐';
+      case 'Pomelo':
+        return '🍊';
+      case 'Strawberry':
+        return '🍓';
+      case 'Tambis':
+        return '🍒';
       default:
         return '🍎';
     }

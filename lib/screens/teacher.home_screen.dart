@@ -27,15 +27,23 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   String _searchQuery = '';
   String? _selectedSectionFilter;
 
-  // Section list - fruits from A to G
+  // Section list - matching teacher sections
   final List<String> _sections = [
     'Apple',
-    'Banana',
-    'Cherry',
+    'Atis',
+    'Chico',
     'Durian',
-    'Elderberry',
-    'Fig',
+    'Grapes',
     'Guava',
+    'Lemon',
+    'Makopa',
+    'Mango',
+    'Melon',
+    'Orange',
+    'Pear',
+    'Pomelo',
+    'Strawberry',
+    'Tambis',
   ];
 
   final StudentService _studentService = StudentService();
@@ -241,18 +249,34 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     switch (section) {
       case 'Apple':
         return '🍎';
-      case 'Banana':
-        return '🍌';
-      case 'Cherry':
-        return '🍒';
+      case 'Atis':
+        return '🍈';
+      case 'Chico':
+        return '🥝';
       case 'Durian':
         return '🥭';
-      case 'Elderberry':
-        return '🫐';
-      case 'Fig':
+      case 'Grapes':
         return '🍇';
       case 'Guava':
         return '🍐';
+      case 'Lemon':
+        return '🍋';
+      case 'Makopa':
+        return '🍑';
+      case 'Mango':
+        return '🥭';
+      case 'Melon':
+        return '🍈';
+      case 'Orange':
+        return '🍊';
+      case 'Pear':
+        return '🍐';
+      case 'Pomelo':
+        return '🍊';
+      case 'Strawberry':
+        return '🍓';
+      case 'Tambis':
+        return '🍒';
       default:
         return '🍎';
     }

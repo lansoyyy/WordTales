@@ -6,35 +6,137 @@ class AuthService {
   // Collection references
   final String _teachersCollection = 'teachers';
 
-  // Initialize default teacher account
-  Future<void> initializeDefaultTeacher() async {
-    try {
-      // Check if default teacher exists
-      final teacherDoc = await _firestore
-          .collection(_teachersCollection)
-          .doc('default_teacher')
-          .get();
+  // Predefined teachers with their sections
+  static const List<Map<String, String>> predefinedTeachers = [
+    {
+      'name': 'Jinky B. Talaogon',
+      'section': 'Apple',
+      'email': 'jinky.talaogon@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Gemma C. Caingin',
+      'section': 'Durian',
+      'email': 'gemma.caingin@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Ma. Lyric E. Alcantara',
+      'section': 'Guava',
+      'email': 'lyric.alcantara@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Luilne B. Arcaya',
+      'section': 'Makopa',
+      'email': 'luilne.arcaya@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Beverly Jane L. Bariquit',
+      'section': 'Pear',
+      'email': 'beverly.bariquit@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Analie M. Boniao',
+      'section': 'Lemon',
+      'email': 'analie.boniao@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Mary Jane M. Caay',
+      'section': 'Mango',
+      'email': 'maryjane.caay@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Thelma E. Callo',
+      'section': 'Strawberry',
+      'email': 'thelma.callo@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Crispina A. Entero',
+      'section': 'Chico',
+      'email': 'crispina.entero@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Elsa Q. Guzmana',
+      'section': 'Orange',
+      'email': 'elsa.guzmana@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Mae B. Lavictoria',
+      'section': 'Atis',
+      'email': 'mae.lavictoria@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Lovella R. Managatan',
+      'section': 'Pomelo',
+      'email': 'lovella.managatan@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Hanna Namocot',
+      'section': 'Grapes',
+      'email': 'hanna.namocot@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Olga G. Quiliman',
+      'section': 'Melon',
+      'email': 'olga.quiliman@wordtales.com',
+      'password': 'teacher123'
+    },
+    {
+      'name': 'Mona P. Yanez',
+      'section': 'Tambis',
+      'email': 'mona.yanez@wordtales.com',
+      'password': 'teacher123'
+    },
+  ];
 
-      if (!teacherDoc.exists) {
-        // Create default teacher account
-        await _firestore
+  // Initialize all predefined teacher accounts
+  Future<void> initializePredefinedTeachers() async {
+    try {
+      for (final teacher in predefinedTeachers) {
+        // Check if teacher already exists by email
+        final querySnapshot = await _firestore
             .collection(_teachersCollection)
-            .doc('default_teacher')
-            .set({
-          'email': 'teacher@wordtales.com',
-          'password': 'teacher123', // In production, this should be hashed
-          'name': 'Default Teacher',
-          'createdAt': FieldValue.serverTimestamp(),
-          'isActive': true,
-        });
-        print('Default teacher account created successfully');
-      } else {
-        print('Default teacher account already exists');
+            .where('email', isEqualTo: teacher['email'])
+            .limit(1)
+            .get();
+
+        if (querySnapshot.docs.isEmpty) {
+          // Create teacher account
+          await _firestore.collection(_teachersCollection).add({
+            'email': teacher['email'],
+            'password': teacher['password'],
+            'name': teacher['name'],
+            'section': teacher['section'],
+            'createdAt': FieldValue.serverTimestamp(),
+            'isActive': true,
+            'isVerified': true, // Pre-verified
+          });
+          print('Teacher account created: ${teacher['name']}');
+        } else {
+          print('Teacher already exists: ${teacher['name']}');
+        }
       }
+      print('All predefined teachers initialized');
     } catch (e) {
-      print('Error initializing default teacher: $e');
+      print('Error initializing predefined teachers: $e');
       rethrow;
     }
+  }
+
+  // Initialize default teacher account (legacy - kept for compatibility)
+  Future<void> initializeDefaultTeacher() async {
+    await initializePredefinedTeachers();
   }
 
   // Teacher login with Firestore
