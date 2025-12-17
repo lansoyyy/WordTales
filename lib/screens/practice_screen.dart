@@ -10,6 +10,8 @@ import 'package:word_tales/services/student_service.dart';
 import 'package:word_tales/services/auth_service.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'dart:async';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io';
 
 class PracticeScreen extends StatefulWidget {
   bool? isTeacher;
@@ -66,6 +68,10 @@ class _PracticeScreenState extends State<PracticeScreen>
   double _confidence = 0.0;
   double _soundLevel = 0.0;
   String? _selectedLocaleId;
+  Timer? _listeningWatchdogTimer;
+  DateTime? _lastSpeechHeardAt;
+  bool _isStartingListening = false;
+  bool _shouldAutoRestartListening = false;
 
   // Incorrect pronunciation tracking
   int _incorrectAttempts = 0;
@@ -75,6 +81,9 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   // Speech recognition error tracking
   bool _hasSpeechError = false;
+  bool _micPermissionGranted = true;
+  bool _micPermissionPermanentlyDenied = false;
+  bool _hasShownMicPermissionDialog = false;
 
   // Services
   final StudentService _studentService = StudentService();
@@ -124,8 +133,211 @@ class _PracticeScreenState extends State<PracticeScreen>
     );
 
     _loadExistingProgress();
-    _initSpeech();
+    Future.microtask(() async {
+      await _ensureMicPermission();
+      if (!mounted) return;
+      if (!Platform.isAndroid || _micPermissionGranted) {
+        await _initSpeech();
+      }
+    });
     _initTts();
+  }
+
+  Future<void> _ensureMicPermission() async {
+    if (!Platform.isAndroid) {
+      if (mounted) {
+        setState(() {
+          _micPermissionGranted = true;
+          _micPermissionPermanentlyDenied = false;
+        });
+      }
+      return;
+    }
+
+    final status = await Permission.microphone.status;
+    if (status.isGranted) {
+      if (mounted) {
+        setState(() {
+          _micPermissionGranted = true;
+          _micPermissionPermanentlyDenied = false;
+          _hasShownMicPermissionDialog = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _micPermissionGranted = false;
+        _micPermissionPermanentlyDenied = status.isPermanentlyDenied;
+      });
+    }
+
+    final requested = await Permission.microphone.request();
+    if (requested.isGranted) {
+      if (mounted) {
+        setState(() {
+          _micPermissionGranted = true;
+          _micPermissionPermanentlyDenied = false;
+          _hasShownMicPermissionDialog = false;
+        });
+      }
+
+      await _initSpeech();
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _micPermissionGranted = false;
+      _micPermissionPermanentlyDenied = requested.isPermanentlyDenied;
+    });
+
+    if (!_hasShownMicPermissionDialog) {
+      _hasShownMicPermissionDialog = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showMicPermissionDialog(
+          permanentlyDenied: _micPermissionPermanentlyDenied,
+        );
+      });
+    }
+  }
+
+  Widget _buildMicPermissionGate() {
+    return Scaffold(
+      backgroundColor: white,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.mic_off, color: Colors.red, size: 90),
+              const SizedBox(height: 16),
+              TextWidget(
+                text: 'Microphone Permission Required',
+                fontSize: 22.0,
+                color: primary,
+                isBold: true,
+                align: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              TextWidget(
+                text:
+                    'This app needs microphone access to hear the student and check pronunciation.',
+                fontSize: 16.0,
+                color: grey,
+                align: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await _ensureMicPermission();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primary,
+                    foregroundColor: white,
+                    minimumSize: const Size(double.infinity, 52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14.0),
+                    ),
+                  ),
+                  child: TextWidget(
+                    text: 'Allow Microphone',
+                    fontSize: 18.0,
+                    color: white,
+                    isBold: true,
+                  ),
+                ),
+              ),
+              if (_micPermissionPermanentlyDenied) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      await openAppSettings();
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primary,
+                      side: BorderSide(color: primary, width: 2),
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14.0),
+                      ),
+                    ),
+                    child: TextWidget(
+                      text: 'Open Settings',
+                      fontSize: 18.0,
+                      color: primary,
+                      isBold: true,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMicPermissionDialog({required bool permanentlyDenied}) {
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16.0),
+        ),
+        title: TextWidget(
+          text: 'Microphone Permission Required',
+          fontSize: 20.0,
+          color: primary,
+          isBold: true,
+          align: TextAlign.center,
+        ),
+        content: TextWidget(
+          text: permanentlyDenied
+              ? 'Microphone permission is permanently denied. Please enable it in Settings to use speech practice.'
+              : 'Please allow microphone access so the app can hear the student and check pronunciation.',
+          fontSize: 16.0,
+          color: grey,
+          align: TextAlign.center,
+        ),
+        actions: [
+          if (permanentlyDenied)
+            TextButton(
+              onPressed: () async {
+                await openAppSettings();
+              },
+              child: TextWidget(
+                text: 'Open Settings',
+                fontSize: 16.0,
+                color: primary,
+                isBold: true,
+              ),
+            ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _ensureMicPermission();
+            },
+            child: TextWidget(
+              text: 'Retry',
+              fontSize: 16.0,
+              color: primary,
+              isBold: true,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _initTts() async {
@@ -550,11 +762,12 @@ class _PracticeScreenState extends State<PracticeScreen>
         try {
           selectedLocale = locales
               .firstWhere(
-                (locale) =>
-                    locale.localeId.startsWith('fil') ||
-                    locale.localeId.startsWith('tl'),
+                (locale) => locale.localeId.startsWith('en'),
                 orElse: () => locales.firstWhere(
-                  (locale) => locale.localeId.startsWith('en'),
+                  (locale) =>
+                      locale.localeId.startsWith('fil') ||
+                      locale.localeId.startsWith('tl'),
+                  orElse: () => locales.first,
                 ),
               )
               .localeId;
@@ -587,14 +800,66 @@ class _PracticeScreenState extends State<PracticeScreen>
     setState(() {
       if (status == 'notListening') {
         _isListening = false;
+        _soundLevel = 0.0;
+      }
+    });
+    if (status == 'notListening') {
+      _listeningWatchdogTimer?.cancel();
+      if (_shouldAutoRestartListening && !(widget.isTeacher ?? false)) {
+        final bool isCurrentItemDone =
+            _completedItems.contains(_currentIndex) ||
+                _failedItems.contains(_currentIndex);
+
+        if (!isCurrentItemDone && _speechAvailable) {
+          Future.delayed(const Duration(milliseconds: 350), () {
+            if (mounted && !_isListening && _shouldAutoRestartListening) {
+              _startListening();
+            }
+          });
+        }
+      }
+    }
+  }
+
+  void _startListeningWatchdog() {
+    _listeningWatchdogTimer?.cancel();
+    _listeningWatchdogTimer =
+        Timer.periodic(const Duration(seconds: 4), (Timer timer) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (!_isListening) {
+        timer.cancel();
+        return;
+      }
+
+      final last = _lastSpeechHeardAt;
+      if (last == null) {
+        return;
+      }
+
+      if (DateTime.now().difference(last) > const Duration(seconds: 6)) {
+        timer.cancel();
+        await _startListening();
       }
     });
   }
 
   Future<void> _startListening() async {
+    if (Platform.isAndroid && !_micPermissionGranted) {
+      await _ensureMicPermission();
+      if (!_micPermissionGranted) {
+        return;
+      }
+    }
+    if (_isStartingListening) return;
+    _isStartingListening = true;
     if (!_speechAvailable) {
       await _initSpeech();
       if (!_speechAvailable) {
+        _isStartingListening = false;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -606,32 +871,68 @@ class _PracticeScreenState extends State<PracticeScreen>
         return;
       }
     }
-    setState(() {
-      _recognizedText = '';
-      _confidence = 0.0;
-      _isListening = true;
-      _soundLevel = 0.0;
-      _hasSpeechError =
-          false; // Reset error flag when starting new listening session
-    });
-    await _speech.listen(
-      onResult: _onSpeechResult,
-      partialResults: true,
-      // Use confirmation mode and shorter timeouts for clearer short-word capture
-      listenMode: stt.ListenMode.confirmation,
-      listenFor: const Duration(seconds: 8),
-      pauseFor: const Duration(seconds: 2),
-      localeId: _selectedLocaleId,
-      onSoundLevelChange: (level) {
-        if (!mounted) return;
+    try {
+      _shouldAutoRestartListening = false;
+      await _flutterTts.stop();
+      await _speech.cancel();
+      await Future.delayed(const Duration(milliseconds: 200));
+
+      if (!mounted) return;
+
+      setState(() {
+        _recognizedText = '';
+        _confidence = 0.0;
+        _isListening = true;
+        _soundLevel = 0.0;
+        _hasSpeechError = false;
+      });
+
+      _shouldAutoRestartListening = true;
+
+      _lastSpeechHeardAt = DateTime.now();
+
+      await _speech.listen(
+        onResult: _onSpeechResult,
+        partialResults: true,
+        listenMode: stt.ListenMode.dictation,
+        listenFor: const Duration(seconds: 20),
+        pauseFor: const Duration(seconds: 5),
+        localeId: _selectedLocaleId,
+        onSoundLevelChange: (level) {
+          if (!mounted) return;
+          if (level > 4) {
+            _lastSpeechHeardAt = DateTime.now();
+          }
+          setState(() {
+            _soundLevel = level;
+          });
+        },
+      );
+
+      _startListeningWatchdog();
+    } catch (e) {
+      debugPrint('Error starting speech listening: $e');
+      if (mounted) {
         setState(() {
-          _soundLevel = level;
+          _isListening = false;
+          _soundLevel = 0.0;
+          _hasSpeechError = true;
         });
-      },
-    );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Microphone not responding. Please try again.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      _isStartingListening = false;
+    }
   }
 
   Future<void> _stopListening() async {
+    _listeningWatchdogTimer?.cancel();
+    _shouldAutoRestartListening = false;
     await _speech.stop();
     if (mounted) {
       setState(() {
@@ -643,18 +944,10 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   void _toggleListening() {
     // Students must listen to the word first before practicing
-    if (!(widget.isTeacher ?? false) && !_hasListenedCurrentItem) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please tap Listen to hear the word first.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+    if (Platform.isAndroid && !_micPermissionGranted) {
+      _ensureMicPermission();
       return;
     }
-
     if (_isListening) {
       _stopListening();
     } else {
@@ -668,6 +961,10 @@ class _PracticeScreenState extends State<PracticeScreen>
       _recognizedText = result.recognizedWords;
       _confidence = result.confidence;
     });
+
+    if (result.recognizedWords.trim().isNotEmpty) {
+      _lastSpeechHeardAt = DateTime.now();
+    }
 
     final target = practiceItems[_currentIndex]['content']!;
     final type = practiceItems[_currentIndex]['type'];
@@ -1225,6 +1522,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     _pulseController.dispose();
     _celebrationController.dispose();
     _incorrectFeedbackTimer?.cancel();
+    _listeningWatchdogTimer?.cancel();
     _flutterTts.stop();
     if (_isListening) {
       _speech.stop();
@@ -1235,6 +1533,7 @@ class _PracticeScreenState extends State<PracticeScreen>
   void _nextItem({bool autoStartListening = false}) {
     // Always stop/reset speech service to ensure it's ready for next item
     // This is important after speech errors where _isListening may be false but service needs reset
+    _listeningWatchdogTimer?.cancel();
     _speech.stop();
 
     setState(() {
@@ -1400,6 +1699,7 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   // Proceed to next item without marking current as failed
   void _proceedToNextItem() {
+    _listeningWatchdogTimer?.cancel();
     _speech.stop();
 
     setState(() {
@@ -1779,6 +2079,9 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (Platform.isAndroid && !_micPermissionGranted) {
+      return _buildMicPermissionGate();
+    }
     final currentItem = practiceItems[_currentIndex];
     final isCurrentItemCompleted = _completedItems.contains(_currentIndex);
     final bool isTeacherMode = widget.isTeacher ?? false;
