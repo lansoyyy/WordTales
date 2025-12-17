@@ -4,6 +4,7 @@ import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
 import 'package:word_tales/services/student_service.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:word_tales/utils/words.dart';
 
 class TeacherHomeScreen extends StatefulWidget {
   final String teacherId;
@@ -82,14 +83,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
       'description': '1 Letter Words',
       'icon': Icons.abc,
       'color': Colors.red,
-      'totalItems': 5,
-      'content': [
-        {'type': 'Word', 'content': 'A'},
-        {'type': 'Word', 'content': 'I'},
-        {'type': 'Word', 'content': 'O'},
-        {'type': 'Word', 'content': 'U'},
-        {'type': 'Word', 'content': 'E'},
-      ],
+      'totalItems': 10,
+      'content': oneLetterWords
+          .take(10)
+          .map((w) => {'type': 'Word', 'content': w})
+          .toList(),
     },
     {
       'level': 2,
@@ -97,19 +95,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
       'description': '2 Letter Words',
       'icon': Icons.text_fields,
       'color': Colors.orange,
-      'totalItems': 10,
-      'content': [
-        {'type': 'Word', 'content': 'AT'},
-        {'type': 'Word', 'content': 'IT'},
-        {'type': 'Word', 'content': 'ON'},
-        {'type': 'Word', 'content': 'UP'},
-        {'type': 'Word', 'content': 'IN'},
-        {'type': 'Word', 'content': 'GO'},
-        {'type': 'Word', 'content': 'TO'},
-        {'type': 'Word', 'content': 'DO'},
-        {'type': 'Word', 'content': 'NO'},
-        {'type': 'Word', 'content': 'SO'},
-      ],
+      'totalItems': 15,
+      'content': twoLetterWords
+          .take(15)
+          .map((w) => {'type': 'Word', 'content': w})
+          .toList(),
     },
     {
       'level': 3,
@@ -117,24 +107,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
       'description': '3 Letter Words',
       'icon': Icons.text_format,
       'color': Colors.yellow,
-      'totalItems': 15,
-      'content': [
-        {'type': 'Word', 'content': 'CAT'},
-        {'type': 'Word', 'content': 'DOG'},
-        {'type': 'Word', 'content': 'SUN'},
-        {'type': 'Word', 'content': 'RUN'},
-        {'type': 'Word', 'content': 'BIG'},
-        {'type': 'Word', 'content': 'RED'},
-        {'type': 'Word', 'content': 'BLUE'},
-        {'type': 'Word', 'content': 'HOT'},
-        {'type': 'Word', 'content': 'COLD'},
-        {'type': 'Word', 'content': 'NEW'},
-        {'type': 'Word', 'content': 'OLD'},
-        {'type': 'Word', 'content': 'BAD'},
-        {'type': 'Word', 'content': 'GOOD'},
-        {'type': 'Word', 'content': 'FUN'},
-        {'type': 'Word', 'content': 'SAD'},
-      ],
+      'totalItems': 20,
+      'content': threeLetterWords
+          .take(20)
+          .map((w) => {'type': 'Word', 'content': w})
+          .toList(),
     },
     {
       'level': 4,
@@ -142,29 +119,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
       'description': '4 Letter Words',
       'icon': Icons.text_snippet,
       'color': Colors.green,
-      'totalItems': 20,
-      'content': [
-        {'type': 'Word', 'content': 'TREE'},
-        {'type': 'Word', 'content': 'BOOK'},
-        {'type': 'Word', 'content': 'PLAY'},
-        {'type': 'Word', 'content': 'JUMP'},
-        {'type': 'Word', 'content': 'WALK'},
-        {'type': 'Word', 'content': 'TALK'},
-        {'type': 'Word', 'content': 'READ'},
-        {'type': 'Word', 'content': 'WRITE'},
-        {'type': 'Word', 'content': 'DRAW'},
-        {'type': 'Word', 'content': 'SING'},
-        {'type': 'Word', 'content': 'DANCE'},
-        {'type': 'Word', 'content': 'SWIM'},
-        {'type': 'Word', 'content': 'FISH'},
-        {'type': 'Word', 'content': 'BIRD'},
-        {'type': 'Word', 'content': 'FROG'},
-        {'type': 'Word', 'content': 'DUCK'},
-        {'type': 'Word', 'content': 'BEAR'},
-        {'type': 'Word', 'content': 'LION'},
-        {'type': 'Word', 'content': 'TIGER'},
-        {'type': 'Word', 'content': 'HORSE'},
-      ],
+      'totalItems': 25,
+      'content': fourLetterWords
+          .take(25)
+          .map((w) => {'type': 'Word', 'content': w})
+          .toList(),
     },
     {
       'level': 5,
@@ -174,27 +133,27 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
       'color': Colors.blue,
       'totalItems': 20,
       'content': [
-        {'type': 'Sentence', 'content': 'The cat is happy'},
-        {'type': 'Sentence', 'content': 'I like to play'},
-        {'type': 'Sentence', 'content': 'The sun shines bright'},
-        {'type': 'Sentence', 'content': 'We can run fast'},
-        {'type': 'Sentence', 'content': 'The dog barks loud'},
-        {'type': 'Sentence', 'content': 'I love to read books'},
-        {'type': 'Sentence', 'content': 'The bird sings sweetly'},
-        {'type': 'Sentence', 'content': 'We play in the park'},
-        {'type': 'Sentence', 'content': 'The fish swims in water'},
-        {'type': 'Sentence', 'content': 'I eat my breakfast'},
-        {'type': 'Sentence', 'content': 'The tree grows tall'},
-        {'type': 'Sentence', 'content': 'We walk to school'},
-        {'type': 'Sentence', 'content': 'The flower smells nice'},
-        {'type': 'Sentence', 'content': 'I draw a picture'},
-        {'type': 'Sentence', 'content': 'The moon is bright'},
-        {'type': 'Sentence', 'content': 'We sing a song'},
-        {'type': 'Sentence', 'content': 'The car goes fast'},
-        {'type': 'Sentence', 'content': 'I write my name'},
-        {'type': 'Sentence', 'content': 'The ball bounces high'},
-        {'type': 'Sentence', 'content': 'We dance together'},
-      ],
+        ['THE', 'CAT', 'IS', 'HAPPY'].join(' '),
+        ['I', 'CAN', 'SEE', 'THE', 'SUN'].join(' '),
+        ['WE', 'PLAY', 'WITH', 'THE', 'BALL'].join(' '),
+        ['THE', 'DOG', 'RUNS', 'FAST'].join(' '),
+        ['I', 'LIKE', 'TO', 'READ', 'BOOKS'].join(' '),
+        ['THE', 'BIRD', 'SINGS', 'NICE'].join(' '),
+        ['WE', 'CAN', 'JUMP', 'HIGH'].join(' '),
+        ['THE', 'FISH', 'SWIMS', 'IN', 'WATER'].join(' '),
+        ['I', 'LOVE', 'MY', 'FAMILY'].join(' '),
+        ['THE', 'TREE', 'IS', 'TALL'].join(' '),
+        ['WE', 'WALK', 'TO', 'SCHOOL'].join(' '),
+        ['THE', 'MOON', 'SHINES', 'BRIGHT'].join(' '),
+        ['I', 'DRAW', 'A', 'PICTURE'].join(' '),
+        ['THE', 'CAR', 'GOES', 'FAST'].join(' '),
+        ['WE', 'SING', 'A', 'SONG'].join(' '),
+        ['THE', 'BABY', 'IS', 'CUTE'].join(' '),
+        ['I', 'EAT', 'MY', 'FOOD'].join(' '),
+        ['THE', 'STAR', 'IS', 'BRIGHT'].join(' '),
+        ['WE', 'DANCE', 'TOGETHER'].join(' '),
+        ['THE', 'RAIN', 'FALLS', 'DOWN'].join(' '),
+      ].map((s) => {'type': 'Sentence', 'content': s}).toList(),
     },
   ];
 
@@ -306,7 +265,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   }
 
   // Add new student
-  Future<void> _addStudent() async {
+  Future<void> addStudent() async {
     final TextEditingController nameController = TextEditingController();
     String? selectedSection;
 
@@ -455,273 +414,26 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     };
   }
 
-  void _addItemToLevel(int levelIndex) {
-    final TextEditingController contentController = TextEditingController();
-    String selectedType = levels[levelIndex]['content'][0]
-        ['type']; // Default to first type in level
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: TextWidget(
-          text: 'Add Item to ${levels[levelIndex]['title']}',
-          fontSize: 20.0,
-          color: black,
-          isBold: true,
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 16.0),
-            TextField(
-              controller: contentController,
-              decoration: InputDecoration(
-                hintText: 'Enter',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.0),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: TextWidget(text: 'Cancel', fontSize: 16.0, color: primary),
-          ),
-          TextButton(
-            onPressed: () {
-              if (contentController.text.isNotEmpty) {
-                setState(() {
-                  levels[levelIndex]['content'].add({
-                    'type': selectedType,
-                    'content': contentController.text,
-                  });
-                  levels[levelIndex]['totalItems'] =
-                      levels[levelIndex]['content'].length;
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: TextWidget(
-                      text:
-                          'Added $selectedType to ${levels[levelIndex]['title']}',
-                      fontSize: 16.0,
-                      color: white,
-                    ),
-                    backgroundColor: primary,
-                  ),
-                );
-              }
-            },
-            child: TextWidget(text: 'Add', fontSize: 16.0, color: primary),
-          ),
-        ],
-      ),
-    );
+  int _getExpectedTotalItemsForLevel(int levelNumber) {
+    if (levelNumber < 1 || levelNumber > levels.length) {
+      return 0;
+    }
+    final dynamic expected = levels[levelNumber - 1]['totalItems'];
+    return expected is num ? expected.toInt() : 0;
   }
 
-  void _editItemInLevel(int levelIndex, int itemIndex) {
-    final item = levels[levelIndex]['content'][itemIndex];
-    final TextEditingController contentController =
-        TextEditingController(text: item['content']);
-    String selectedType = item['type'];
+  int _getDisplayTotalItems(dynamic storedTotalItems, int expectedTotalItems) {
+    final int loaded =
+        storedTotalItems is num ? storedTotalItems.toInt() : expectedTotalItems;
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: TextWidget(
-          text: 'Edit Item in ${levels[levelIndex]['title']}',
-          fontSize: 20.0,
-          color: black,
-          isBold: true,
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 16.0),
-            TextField(
-              controller: contentController,
-              decoration: InputDecoration(
-                hintText: 'Enter',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.0),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: TextWidget(text: 'Cancel', fontSize: 16.0, color: primary),
-          ),
-          TextButton(
-            onPressed: () {
-              if (contentController.text.isNotEmpty) {
-                setState(() {
-                  levels[levelIndex]['content'][itemIndex] = {
-                    'type': selectedType,
-                    'content': contentController.text,
-                  };
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: TextWidget(
-                      text: 'Updated item in ${levels[levelIndex]['title']}',
-                      fontSize: 16.0,
-                      color: white,
-                    ),
-                    backgroundColor: primary,
-                  ),
-                );
-              }
-            },
-            child: TextWidget(text: 'Update', fontSize: 16.0, color: primary),
-          ),
-        ],
-      ),
-    );
+    if (expectedTotalItems > 0 && loaded > 0 && loaded < expectedTotalItems) {
+      return expectedTotalItems;
+    }
+
+    return loaded;
   }
 
-  void _deleteItemFromLevel(int levelIndex, int itemIndex) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: TextWidget(
-          text: 'Delete Item',
-          fontSize: 20.0,
-          color: black,
-          isBold: true,
-        ),
-        content: TextWidget(
-          text:
-              'Are you sure you want to delete "${levels[levelIndex]['content'][itemIndex]['content']}" from ${levels[levelIndex]['title']}?',
-          fontSize: 16.0,
-          color: grey,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: TextWidget(text: 'Cancel', fontSize: 16.0, color: primary),
-          ),
-          TextButton(
-            onPressed: () {
-              setState(() {
-                levels[levelIndex]['content'].removeAt(itemIndex);
-                levels[levelIndex]['totalItems'] =
-                    levels[levelIndex]['content'].length;
-              });
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: TextWidget(
-                    text: 'Item deleted from ${levels[levelIndex]['title']}',
-                    fontSize: 16.0,
-                    color: white,
-                  ),
-                  backgroundColor: primary,
-                ),
-              );
-            },
-            child:
-                TextWidget(text: 'Delete', fontSize: 16.0, color: Colors.red),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _manageLevelContent(int levelIndex) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
-          height: MediaQuery.of(context).size.height * 0.8,
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    levels[levelIndex]['icon'],
-                    color: levels[levelIndex]['color'],
-                    size: 30.0,
-                  ),
-                  const SizedBox(width: 12.0),
-                  Expanded(
-                    child: TextWidget(
-                      text:
-                          '${levels[levelIndex]['title']} - ${levels[levelIndex]['description']}',
-                      fontSize: 20.0,
-                      color: levels[levelIndex]['color'],
-                      isBold: true,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: Icon(Icons.close, color: grey),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16.0),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: levels[levelIndex]['content'].length,
-                  itemBuilder: (context, itemIndex) {
-                    final item = levels[levelIndex]['content'][itemIndex];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8.0),
-                      padding: const EdgeInsets.all(12.0),
-                      decoration: BoxDecoration(
-                        color: white,
-                        borderRadius: BorderRadius.circular(8.0),
-                        border: Border.all(color: levels[levelIndex]['color']),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            item['type'] == 'Word'
-                                ? Icons.text_fields
-                                : Icons.short_text,
-                            color: levels[levelIndex]['color'],
-                            size: 20.0,
-                          ),
-                          const SizedBox(width: 8.0),
-                          Expanded(
-                            child: TextWidget(
-                              text: item['content'],
-                              fontSize: 16.0,
-                              color: black,
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () =>
-                                _editItemInLevel(levelIndex, itemIndex),
-                            icon: Icon(Icons.edit, color: primary, size: 20.0),
-                          ),
-                          IconButton(
-                            onPressed: () =>
-                                _deleteItemFromLevel(levelIndex, itemIndex),
-                            icon: Icon(Icons.delete,
-                                color: Colors.red, size: 20.0),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _exportProgress() {
+  void exportProgress() {
     // Placeholder for export action
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -738,6 +450,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     final dynamic results = levelData['results'];
     final Set<int> completedItems = <int>{};
     final Set<int> failedItems = <int>{};
+
+    final int expectedTotalItems = _getExpectedTotalItemsForLevel(levelNumber);
+    final int displayTotalItems = _getDisplayTotalItems(
+      levelData['totalItems'],
+      expectedTotalItems,
+    );
 
     if (results is Map) {
       final dynamic completed = results['completedItems'];
@@ -844,7 +562,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                             const SizedBox(height: 8.0),
                             TextWidget(
                               text:
-                                  'Score: ${levelData['score']}/${levelData['totalItems']}',
+                                  'Score: ${levelData['score']}/$displayTotalItems',
                               fontSize: 16.0,
                               color: primary,
                               isBold: true,
@@ -1095,6 +813,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     final level = levels[levelIndex];
     final levelStats = getLevelStats(level['level']);
 
+    final int expectedTotalItems =
+        _getExpectedTotalItemsForLevel(level['level'] as int);
+
     // Build a locally sorted copy of students by performance band for this level
     final List<Map<String, dynamic>> sortedStudents = List.from(_students);
     sortedStudents.sort((a, b) {
@@ -1116,17 +837,23 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
           bLevelData != null && (bLevelData['completed'] == true);
 
       final double? aPercent = aCompleted
-          ? ((aLevelData['totalItems'] ?? 0) > 0
+          ? ((_getDisplayTotalItems(
+                      aLevelData['totalItems'], expectedTotalItems)) >
+                  0
               ? (aLevelData['score'] ?? 0) *
                   100.0 /
-                  (aLevelData['totalItems'] ?? 1)
+                  (_getDisplayTotalItems(
+                      aLevelData['totalItems'], expectedTotalItems))
               : null)
           : null;
       final double? bPercent = bCompleted
-          ? ((bLevelData['totalItems'] ?? 0) > 0
+          ? ((_getDisplayTotalItems(
+                      bLevelData['totalItems'], expectedTotalItems)) >
+                  0
               ? (bLevelData['score'] ?? 0) *
                   100.0 /
-                  (bLevelData['totalItems'] ?? 1)
+                  (_getDisplayTotalItems(
+                      bLevelData['totalItems'], expectedTotalItems))
               : null)
           : null;
 
@@ -1296,10 +1023,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
                     double? percentage;
                     Color? performanceColor;
-                    if (isCompleted && (levelData['totalItems'] ?? 0) > 0) {
-                      percentage = (levelData['score'] ?? 0) *
-                          100.0 /
-                          (levelData['totalItems'] ?? 1);
+                    final int displayTotalItems = _getDisplayTotalItems(
+                      levelData is Map ? levelData['totalItems'] : null,
+                      expectedTotalItems,
+                    );
+                    if (isCompleted && displayTotalItems > 0) {
+                      percentage =
+                          (levelData['score'] ?? 0) * 100.0 / displayTotalItems;
                       performanceColor = _getPerformanceColor(percentage!);
                     }
 
@@ -1347,8 +1077,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                   const SizedBox(height: 4.0),
                                   TextWidget(
                                     text: percentage != null
-                                        ? 'Score: ${levelData['score']}/${levelData['totalItems']} (${percentage.toStringAsFixed(0)}%) • ${levelData['date']}'
-                                        : 'Score: ${levelData['score']}/${levelData['totalItems']} • ${levelData['date']}',
+                                        ? 'Score: ${levelData['score']}/$displayTotalItems (${percentage.toStringAsFixed(0)}%) • ${levelData['date']}'
+                                        : 'Score: ${levelData['score']}/$displayTotalItems • ${levelData['date']}',
                                     fontSize: 14.0,
                                     color: performanceColor ?? grey,
                                   ),
@@ -1403,28 +1133,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
               // Action buttons
               Row(
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _manageLevelContent(levelIndex);
-                      },
-                      icon: Icon(Icons.settings, color: level['color']),
-                      label: TextWidget(
-                        text: 'Manage Level',
-                        fontSize: 16.0,
-                        color: level['color'],
-                        isBold: true,
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: level['color']),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8.0),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12.0),
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () => Navigator.pop(context),
@@ -1706,25 +1414,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                 ),
                               ],
                               const SizedBox(height: 8.0),
-                              ElevatedButton.icon(
-                                onPressed: () => _manageLevelContent(index),
-                                icon: Icon(Icons.settings,
-                                    color: level['color'], size: 16.0),
-                                label: TextWidget(
-                                  text: 'Manage',
-                                  fontSize: 14.0,
-                                  color: level['color'],
-                                  fontFamily: 'Regular',
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: level['color'],
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8.0),
-                                  ),
-                                  elevation: 2.0,
-                                ),
-                              ),
                             ],
                           ),
                         ),

@@ -225,12 +225,14 @@ class StudentService {
             'completed': false,
             'score': 0,
             'totalItems': level == 1
-                ? 5
+                ? 10
                 : level == 2
-                    ? 10
+                    ? 15
                     : level == 3
-                        ? 15
-                        : 20,
+                        ? 20
+                        : level == 4
+                            ? 25
+                            : 20,
             'date': null,
           }
         });
@@ -241,25 +243,25 @@ class StudentService {
             '1': {
               'completed': false,
               'score': 0,
-              'totalItems': 5,
+              'totalItems': 10,
               'date': null
             },
             '2': {
               'completed': false,
               'score': 0,
-              'totalItems': 10,
+              'totalItems': 15,
               'date': null
             },
             '3': {
               'completed': false,
               'score': 0,
-              'totalItems': 15,
+              'totalItems': 20,
               'date': null
             },
             '4': {
               'completed': false,
               'score': 0,
-              'totalItems': 20,
+              'totalItems': 25,
               'date': null
             },
             '5': {
