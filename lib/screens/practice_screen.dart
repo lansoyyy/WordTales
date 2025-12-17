@@ -2481,7 +2481,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                               ),
                             ),
 
-                          // // Listen button (student must listen before practicing)
+                          // Listen button (commented out - not required before practicing)
                           // Visibility(
                           //   visible: !(widget.isTeacher ?? false),
                           //   child: Column(
@@ -2489,9 +2489,9 @@ class _PracticeScreenState extends State<PracticeScreen>
                           //       ElevatedButton.icon(
                           //         onPressed: _listenCurrentItem,
                           //         icon: Icon(Icons.volume_up,
-                          //             color: primary, size: 28.0),
+                          //             color: white, size: 28.0),
                           //         label: TextWidget(
-                          //           text: 'Listen to the word ',
+                          //           text: 'Listen to the word 🔊',
                           //           fontSize: 18.0,
                           //           color: white,
                           //           isBold: true,
@@ -2517,8 +2517,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                             child: ScaleTransition(
                               scale: _scaleAnimation,
                               child: ElevatedButton.icon(
-                                onPressed: (isCurrentItemCompleted ||
-                                        !_hasListenedCurrentItem)
+                                onPressed: isCurrentItemCompleted
                                     ? null
                                     : () {
                                         if (_isListening) {
@@ -2538,13 +2537,11 @@ class _PracticeScreenState extends State<PracticeScreen>
                                 label: TextWidget(
                                   text: isCurrentItemCompleted
                                       ? 'Completed! '
-                                      : (!_hasListenedCurrentItem
-                                          ? 'Tap Listen first '
-                                          : (_isListening
-                                              ? 'Listening... Tap to stop'
-                                              : (_incorrectAttempts >= 3
-                                                  ? 'Try again! You can do it! '
-                                                  : 'Practice Now! '))),
+                                      : (_isListening
+                                          ? 'Listening... Tap to stop'
+                                          : (_incorrectAttempts >= 3
+                                              ? 'Try again! You can do it! '
+                                              : 'Practice Now! ')),
                                   fontSize: 24.0,
                                   color: white,
                                   isBold: true,
@@ -2552,9 +2549,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: isCurrentItemCompleted
                                       ? Colors.green
-                                      : (_hasListenedCurrentItem
-                                          ? primary
-                                          : primary.withOpacity(0.6)),
+                                      : primary,
                                   foregroundColor: white,
                                   minimumSize:
                                       const Size(double.infinity, 80.0),
