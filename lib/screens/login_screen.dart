@@ -257,6 +257,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('current_teacher_id', teacher['id']);
         await prefs.setString('current_teacher_name', teacher['name']);
+        await prefs.setString('current_teacher_section', teacher['section']);
 
         if (mounted) {
           Navigator.pushReplacement(
@@ -265,6 +266,7 @@ class _LoginScreenState extends State<LoginScreen> {
               builder: (context) => TeacherHomeScreen(
                 teacherId: teacher['id'],
                 teacherName: teacher['name'],
+                teacherSection: teacher['section'],
               ),
             ),
           );

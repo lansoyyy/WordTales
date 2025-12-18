@@ -9,11 +9,13 @@ import 'package:word_tales/utils/words.dart';
 class TeacherHomeScreen extends StatefulWidget {
   final String teacherId;
   final String teacherName;
+  final String teacherSection;
 
   const TeacherHomeScreen({
     super.key,
     required this.teacherId,
     required this.teacherName,
+    required this.teacherSection,
   });
 
   @override
@@ -26,7 +28,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   late Animation<double> _cardAnimation;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String? _selectedSectionFilter;
 
   // Section list - matching teacher sections
   final List<String> _sections = [
@@ -205,6 +206,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
   // Get emoji for each fruit section
   String _getSectionEmoji(String section) {
+    if (!_sections.contains(section)) {
+      return '🏫';
+    }
     switch (section) {
       case 'Apple':
         return '🍎';
@@ -245,12 +249,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   List<Map<String, dynamic>> get filteredStudents {
     var filtered = _students;
 
-    // Filter by section if selected
-    if (_selectedSectionFilter != null) {
-      filtered = filtered
-          .where((student) => student['section'] == _selectedSectionFilter)
-          .toList();
-    }
+    filtered = filtered
+        .where((student) => student['section'] == widget.teacherSection)
+        .toList();
 
     // Filter by search query
     if (_searchQuery.isNotEmpty) {
@@ -267,7 +268,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   // Add new student
   Future<void> addStudent() async {
     final TextEditingController nameController = TextEditingController();
-    String? selectedSection;
 
     await showDialog(
       context: context,
@@ -293,43 +293,32 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                 ),
               ),
               const SizedBox(height: 16.0),
-              DropdownButtonFormField<String>(
-                value: selectedSection,
-                hint: TextWidget(
-                  text: 'Select Section',
-                  fontSize: 14.0,
-                  color: grey,
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12.0, vertical: 14.0),
+                decoration: BoxDecoration(
+                  border: Border.all(color: grey.withOpacity(0.5)),
+                  borderRadius: BorderRadius.circular(8.0),
                 ),
-                decoration: InputDecoration(
-                  prefixIcon: Icon(Icons.class_, color: primary),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8.0),
-                  ),
-                ),
-                items: _sections.map((section) {
-                  return DropdownMenuItem<String>(
-                    value: section,
-                    child: Row(
-                      children: [
-                        Text(
-                          _getSectionEmoji(section),
-                          style: const TextStyle(fontSize: 18),
-                        ),
-                        const SizedBox(width: 8),
-                        TextWidget(
-                          text: section,
-                          fontSize: 14.0,
-                          color: black,
-                        ),
-                      ],
+                child: Row(
+                  children: [
+                    Icon(Icons.class_, color: primary),
+                    const SizedBox(width: 10),
+                    Text(
+                      _getSectionEmoji(widget.teacherSection),
+                      style: const TextStyle(fontSize: 18),
                     ),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setDialogState(() {
-                    selectedSection = value;
-                  });
-                },
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextWidget(
+                        text: widget.teacherSection,
+                        fontSize: 14.0,
+                        color: black,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -344,13 +333,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
             ),
             ElevatedButton(
               onPressed: () async {
-                if (nameController.text.trim().isNotEmpty &&
-                    selectedSection != null) {
+                if (nameController.text.trim().isNotEmpty) {
                   try {
                     await _studentService.createStudent(
                       name: nameController.text.trim(),
                       teacherId: widget.teacherId,
-                      section: selectedSection!,
+                      section: widget.teacherSection,
                     );
                     Navigator.pop(context);
                     _loadStudents();
@@ -1500,56 +1488,23 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                           ),
                         ],
                       ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _selectedSectionFilter,
-                          hint: Row(
-                            children: [
-                              Icon(Icons.filter_list, color: primary, size: 20),
-                              const SizedBox(width: 4),
-                              TextWidget(
-                                text: 'Section',
-                                fontSize: 14.0,
-                                color: grey,
-                              ),
-                            ],
+                      child: Row(
+                        children: [
+                          Icon(Icons.class_, color: primary, size: 20),
+                          const SizedBox(width: 6),
+                          Text(
+                            _getSectionEmoji(widget.teacherSection),
+                            style: const TextStyle(fontSize: 16),
                           ),
-                          isExpanded: true,
-                          items: [
-                            DropdownMenuItem<String>(
-                              value: null,
-                              child: TextWidget(
-                                text: 'All Sections',
-                                fontSize: 14.0,
-                                color: black,
-                              ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: TextWidget(
+                              text: widget.teacherSection,
+                              fontSize: 14.0,
+                              color: black,
                             ),
-                            ..._sections.map((section) {
-                              return DropdownMenuItem<String>(
-                                value: section,
-                                child: Row(
-                                  children: [
-                                    Text(
-                                      _getSectionEmoji(section),
-                                      style: const TextStyle(fontSize: 16),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    TextWidget(
-                                      text: section,
-                                      fontSize: 14.0,
-                                      color: black,
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedSectionFilter = value;
-                            });
-                          },
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

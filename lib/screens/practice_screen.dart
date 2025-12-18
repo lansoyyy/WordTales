@@ -72,6 +72,9 @@ class _PracticeScreenState extends State<PracticeScreen>
   DateTime? _lastSpeechHeardAt;
   bool _isStartingListening = false;
   bool _shouldAutoRestartListening = false;
+  Future<void>? _speechInitFuture;
+  bool _didWarmUpSpeech = false;
+  bool _isWarmingUpSpeech = false;
 
   // Incorrect pronunciation tracking
   int _incorrectAttempts = 0;
@@ -95,6 +98,8 @@ class _PracticeScreenState extends State<PracticeScreen>
     super.initState();
     _initializePracticeItems();
     _totalItems = practiceItems.length;
+
+    _speech = stt.SpeechToText();
 
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 800),
@@ -707,10 +712,13 @@ class _PracticeScreenState extends State<PracticeScreen>
     return sentences;
   }
 
-  Future<void> _initSpeech() async {
-    try {
-      _speech = stt.SpeechToText();
+  Future<void> _initSpeech() {
+    _speechInitFuture ??= _initSpeechInternal();
+    return _speechInitFuture!;
+  }
 
+  Future<void> _initSpeechInternal() async {
+    try {
       // Initialize the speech engine first
       final available = await _speech.initialize(
         onStatus: _onSpeechStatus,
@@ -744,6 +752,7 @@ class _PracticeScreenState extends State<PracticeScreen>
         setState(() {
           _speechAvailable = false;
         });
+        _speechInitFuture = null;
         return;
       }
 
@@ -787,6 +796,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       }
     } catch (e) {
       debugPrint('Error initializing speech engine: $e');
+      _speechInitFuture = null;
       if (mounted) {
         setState(() {
           _speechAvailable = false;
@@ -797,13 +807,23 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   void _onSpeechStatus(String status) {
     if (!mounted) return;
+    if (_isWarmingUpSpeech) {
+      if (status == 'notListening' || status == 'done') {
+        _isWarmingUpSpeech = false;
+      }
+      return;
+    }
+    final bool stopped = status == 'notListening' || status == 'done';
     setState(() {
-      if (status == 'notListening') {
+      if (status == 'listening') {
+        _isListening = true;
+      }
+      if (stopped) {
         _isListening = false;
         _soundLevel = 0.0;
       }
     });
-    if (status == 'notListening') {
+    if (stopped) {
       _listeningWatchdogTimer?.cancel();
       if (_shouldAutoRestartListening && !(widget.isTeacher ?? false)) {
         final bool isCurrentItemDone =
@@ -847,6 +867,38 @@ class _PracticeScreenState extends State<PracticeScreen>
     });
   }
 
+  Future<void> _ensureSpeechWarmUpIfNeeded() async {
+    if (!Platform.isAndroid) return;
+    if (_didWarmUpSpeech) return;
+    if (!_speechAvailable) return;
+    if (_isListening) return;
+    _didWarmUpSpeech = true;
+
+    _isWarmingUpSpeech = true;
+    try {
+      try {
+        await _speech.stop();
+      } catch (_) {}
+
+      await _speech.listen(
+        onResult: (_) {},
+        partialResults: false,
+        listenMode: stt.ListenMode.dictation,
+        listenFor: const Duration(seconds: 1),
+        pauseFor: const Duration(seconds: 1),
+        localeId: _selectedLocaleId,
+      );
+
+      await Future.delayed(const Duration(milliseconds: 650));
+    } catch (_) {
+    } finally {
+      try {
+        await _speech.stop();
+      } catch (_) {}
+      _isWarmingUpSpeech = false;
+    }
+  }
+
   Future<void> _startListening() async {
     if (Platform.isAndroid && !_micPermissionGranted) {
       await _ensureMicPermission();
@@ -856,25 +908,28 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
     if (_isStartingListening) return;
     _isStartingListening = true;
+    await _initSpeech();
     if (!_speechAvailable) {
-      await _initSpeech();
-      if (!_speechAvailable) {
-        _isStartingListening = false;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'Speech not available. Please check microphone permission or try again.'),
-            ),
-          );
-        }
-        return;
+      _isStartingListening = false;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Speech not available. Please check microphone permission or try again.'),
+          ),
+        );
       }
+      return;
     }
     try {
       _shouldAutoRestartListening = false;
       await _flutterTts.stop();
-      await _speech.cancel();
+
+      await _ensureSpeechWarmUpIfNeeded();
+
+      try {
+        await _speech.cancel();
+      } catch (_) {}
       await Future.delayed(const Duration(milliseconds: 200));
 
       if (!mounted) return;
@@ -882,7 +937,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       setState(() {
         _recognizedText = '';
         _confidence = 0.0;
-        _isListening = true;
+        _isListening = false;
         _soundLevel = 0.0;
         _hasSpeechError = false;
       });
@@ -891,23 +946,67 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       _lastSpeechHeardAt = DateTime.now();
 
-      await _speech.listen(
-        onResult: _onSpeechResult,
-        partialResults: true,
-        listenMode: stt.ListenMode.dictation,
-        listenFor: const Duration(seconds: 20),
-        pauseFor: const Duration(seconds: 5),
-        localeId: _selectedLocaleId,
-        onSoundLevelChange: (level) {
-          if (!mounted) return;
-          if (level > 4) {
-            _lastSpeechHeardAt = DateTime.now();
-          }
+      Future<void> startOnce() {
+        return _speech.listen(
+          onResult: _onSpeechResult,
+          partialResults: true,
+          listenMode: stt.ListenMode.dictation,
+          listenFor: const Duration(seconds: 20),
+          pauseFor: const Duration(seconds: 5),
+          localeId: _selectedLocaleId,
+          onSoundLevelChange: (level) {
+            if (!mounted) return;
+            if (level > 1.5) {
+              _lastSpeechHeardAt = DateTime.now();
+            }
+            setState(() {
+              _soundLevel = level;
+            });
+          },
+        );
+      }
+
+      await startOnce();
+      await Future.delayed(const Duration(milliseconds: 700));
+      bool started = _speech.isListening || _isListening;
+      if (!started) {
+        await Future.delayed(const Duration(milliseconds: 700));
+        started = _speech.isListening || _isListening;
+      }
+
+      if (!started) {
+        try {
+          await _speech.cancel();
+        } catch (_) {}
+        await Future.delayed(const Duration(milliseconds: 350));
+        await startOnce();
+        await Future.delayed(const Duration(milliseconds: 700));
+        started = _speech.isListening || _isListening;
+      }
+
+      if (!started) {
+        if (mounted) {
           setState(() {
-            _soundLevel = level;
+            _isListening = false;
+            _soundLevel = 0.0;
+            _hasSpeechError = true;
           });
-        },
-      );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                  'Microphone not ready yet. Please try again in a moment.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _isListening = true;
+        });
+      }
 
       _startListeningWatchdog();
     } catch (e) {
