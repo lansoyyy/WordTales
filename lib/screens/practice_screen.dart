@@ -723,24 +723,28 @@ class _PracticeScreenState extends State<PracticeScreen>
       final available = await _speech.initialize(
         onStatus: _onSpeechStatus,
         onError: (error) {
-          debugPrint('Speech error: $error');
-          // Set speech error flag so skip button appears
-          if (mounted) {
-            setState(() {
-              _hasSpeechError = true;
-              _isListening = false;
-            });
-            // Show user-friendly error for Filipino children
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Hindi ma-recognize ang speech. Pwede mong i-skip! (Speech not recognized. You can skip!)',
-                  style: TextStyle(fontFamily: 'Regular'),
-                ),
-                backgroundColor: Colors.orange,
-                duration: const Duration(seconds: 4),
-              ),
-            );
+          debugPrint(
+              'Speech error: ${error.errorMsg} (permanent: ${error.permanent})');
+          if (!mounted) return;
+
+          // Catch ALL errors and auto-restart listening immediately.
+          // Never show error to user - just keep trying until speech is captured.
+          setState(() {
+            _isListening = false;
+          });
+
+          // Auto-restart listening after any error
+          if (_shouldAutoRestartListening && !(widget.isTeacher ?? false)) {
+            final bool isCurrentItemDone =
+                _completedItems.contains(_currentIndex) ||
+                    _failedItems.contains(_currentIndex);
+            if (!isCurrentItemDone) {
+              Future.delayed(const Duration(milliseconds: 200), () {
+                if (mounted && !_isListening && _shouldAutoRestartListening) {
+                  _startListening();
+                }
+              });
+            }
           }
         },
         finalTimeout: const Duration(seconds: 10),
@@ -830,8 +834,9 @@ class _PracticeScreenState extends State<PracticeScreen>
             _completedItems.contains(_currentIndex) ||
                 _failedItems.contains(_currentIndex);
 
-        if (!isCurrentItemDone && _speechAvailable) {
-          Future.delayed(const Duration(milliseconds: 350), () {
+        if (!isCurrentItemDone) {
+          // Restart immediately - no delay, no conditions
+          Future.delayed(const Duration(milliseconds: 150), () {
             if (mounted && !_isListening && _shouldAutoRestartListening) {
               _startListening();
             }
@@ -860,7 +865,8 @@ class _PracticeScreenState extends State<PracticeScreen>
         return;
       }
 
-      if (DateTime.now().difference(last) > const Duration(seconds: 6)) {
+      if (DateTime.now().difference(last) > const Duration(seconds: 3)) {
+        // Restart faster - don't wait 6 seconds
         timer.cancel();
         await _startListening();
       }
@@ -952,7 +958,7 @@ class _PracticeScreenState extends State<PracticeScreen>
           partialResults: true,
           listenMode: stt.ListenMode.dictation,
           listenFor: const Duration(seconds: 20),
-          pauseFor: const Duration(seconds: 5),
+          pauseFor: const Duration(seconds: 2),
           localeId: _selectedLocaleId,
           onSoundLevelChange: (level) {
             if (!mounted) return;
@@ -1088,11 +1094,22 @@ class _PracticeScreenState extends State<PracticeScreen>
       }
     } else if (type == 'Word') {
       // For multi-letter words, require reasonable character accuracy.
+      // BUT if baseMatch (sophisticated check) already passed, trust it!
+      // The accuracy check is prone to failure on short words due to alignment issues
+      // (e.g. "HIS" vs "IS" gives 0% accuracy due to position, but baseMatch finds it).
       final bool isSingleLetterTarget =
           target.replaceAll(' ', '').trim().length == 1;
-      if (!isSingleLetterTarget && accuracy < 70.0) {
+      final bool isShortWord = target.replaceAll(' ', '').trim().length <= 3;
+
+      if (!isSingleLetterTarget &&
+          !isShortWord &&
+          accuracy < 45.0 &&
+          !baseMatch) {
+        // Only block if baseMatch failed AND accuracy is low
         isMatch = false;
       }
+      // If baseMatch is true, we keep isMatch = true regardless of accuracy
+      // because _matchesTarget handles the "contains" logic better.
     }
 
     // For single-word items, allow early acceptance even on partial results
@@ -1388,31 +1405,48 @@ class _PracticeScreenState extends State<PracticeScreen>
         return similarity >= letterThreshold || t == h || words.contains(t);
       }
 
-      // For normal words (2+ letters), be stricter so that extra
-      // trailing sounds like "AND" for target "AN" are not
-      // treated as correct.
+      // For normal words (2+ letters), be stricter but allow
+      // the target word to be found within the hypothesis (e.g. "UH AT" for "AT").
+      final hWords = h.split(' ');
+      if (hWords.contains(t)) {
+        return true;
+      }
 
-      // For very short words/syllables (2-3 letters), require the
-      // recognized character length to match exactly.
-      if (tLen <= 3 && hLen != tLen) {
+      // For very short words/syllables (2-3 letters), relaxed length check.
+      // Was: if (tLen <= 3 && hLen != tLen) return false;
+      // Now: Allow slightly longer hypothesis to account for noise (e.g. "H AT").
+      if (tLen <= 3 && hLen > tLen + 2) {
         return false;
       }
 
       // For longer words, do not allow a long extra tail
       // (e.g., target "ACT" vs hypothesis "ACTIVITY").
-      if (tLen > 3 && hLen > tLen + 1) {
+      if (tLen > 3 && hLen > tLen + 2) {
         return false;
       }
 
       // Use a moderate similarity threshold and relax slightly
       // after several incorrect attempts.
       double wordThreshold = 0.75;
-      if (_incorrectAttempts >= 2) {
-        wordThreshold = 0.65;
+
+      // For very short words (2 letters), start more leniently (0.60)
+      // to allow close matches like "HAT"/"AT" (similarity ~0.66) to pass.
+      if (tLen <= 2) {
+        wordThreshold = 0.60;
+      }
+
+      if (_incorrectAttempts >= 1) {
+        // After failure, be very forgiving for short words (0.50)
+        wordThreshold = tLen <= 2 ? 0.50 : 0.65;
+      }
+      if (_incorrectAttempts >= 3) {
+        wordThreshold = 0.45;
       }
 
       // Also require good character-level agreement for words.
-      if (charMatchRatio < 0.8) {
+      // Lowered from 0.8 to 0.6 to allow for minor spelling variations
+      // if phonetic similarity is high.
+      if (charMatchRatio < 0.6) {
         return false;
       }
 
