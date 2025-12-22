@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 class StudentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -20,11 +21,41 @@ class StudentService {
         'createdAt': FieldValue.serverTimestamp(),
         'isActive': true,
         'levelProgress': {
-          '1': {'completed': false, 'score': 0, 'totalItems': 5, 'date': null},
-          '2': {'completed': false, 'score': 0, 'totalItems': 10, 'date': null},
-          '3': {'completed': false, 'score': 0, 'totalItems': 15, 'date': null},
-          '4': {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
-          '5': {'completed': false, 'score': 0, 'totalItems': 20, 'date': null},
+          '1': {
+            'completed': false,
+            'score': 0,
+            'totalItems': 5,
+            'date': null,
+            'audioRecordings': <String, String>{}
+          },
+          '2': {
+            'completed': false,
+            'score': 0,
+            'totalItems': 10,
+            'date': null,
+            'audioRecordings': <String, String>{}
+          },
+          '3': {
+            'completed': false,
+            'score': 0,
+            'totalItems': 15,
+            'date': null,
+            'audioRecordings': <String, String>{}
+          },
+          '4': {
+            'completed': false,
+            'score': 0,
+            'totalItems': 20,
+            'date': null,
+            'audioRecordings': <String, String>{}
+          },
+          '5': {
+            'completed': false,
+            'score': 0,
+            'totalItems': 20,
+            'date': null,
+            'audioRecordings': <String, String>{}
+          },
         },
       });
       print('Student created with ID: ${docRef.id}');
@@ -176,10 +207,28 @@ class StudentService {
               'completedItems': completedItems ?? <int>[],
               'failedItems': failedItems ?? <int>[],
             },
+          'audioRecordings': <String, String>{},
         }
       });
     } catch (e) {
       print('Error updating level progress: $e');
+      rethrow;
+    }
+  }
+
+  // Save audio recording for a specific item
+  Future<void> saveAudioRecording({
+    required String studentId,
+    required int level,
+    required int itemIndex,
+    required String audioUrl,
+  }) async {
+    try {
+      await _firestore.collection(_studentsCollection).doc(studentId).update({
+        'levelProgress.$level.audioRecordings.$itemIndex': audioUrl,
+      });
+    } catch (e) {
+      print('Error saving audio recording: $e');
       rethrow;
     }
   }
@@ -234,6 +283,7 @@ class StudentService {
                             ? 25
                             : 20,
             'date': null,
+            'audioRecordings': <String, String>{},
           }
         });
       } else {
@@ -244,31 +294,36 @@ class StudentService {
               'completed': false,
               'score': 0,
               'totalItems': 10,
-              'date': null
+              'date': null,
+              'audioRecordings': <String, String>{},
             },
             '2': {
               'completed': false,
               'score': 0,
               'totalItems': 15,
-              'date': null
+              'date': null,
+              'audioRecordings': <String, String>{},
             },
             '3': {
               'completed': false,
               'score': 0,
               'totalItems': 20,
-              'date': null
+              'date': null,
+              'audioRecordings': <String, String>{},
             },
             '4': {
               'completed': false,
               'score': 0,
               'totalItems': 25,
-              'date': null
+              'date': null,
+              'audioRecordings': <String, String>{},
             },
             '5': {
               'completed': false,
               'score': 0,
               'totalItems': 20,
-              'date': null
+              'date': null,
+              'audioRecordings': <String, String>{},
             },
           },
         });

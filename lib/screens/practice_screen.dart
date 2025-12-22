@@ -8,6 +8,7 @@ import 'package:word_tales/services/filipino_pronunciation_service.dart';
 import 'package:word_tales/utils/words.dart';
 import 'package:word_tales/services/student_service.dart';
 import 'package:word_tales/services/auth_service.dart';
+import 'package:word_tales/services/audio_service.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
@@ -92,6 +93,35 @@ class _PracticeScreenState extends State<PracticeScreen>
   final StudentService _studentService = StudentService();
   final FlutterTts _flutterTts = FlutterTts();
   bool _hasListenedCurrentItem = false;
+
+  // Audio recording
+  String? _currentRecordingPath;
+  bool _isRecording = false;
+
+  Future<void> _uploadAndSaveRecording(String recordingPath) async {
+    if (widget.studentId == null || widget.level == null) return;
+
+    try {
+      final audioUrl = await AudioService.uploadAudio(
+        filePath: recordingPath,
+        studentId: widget.studentId!,
+        level: widget.level!,
+        itemIndex: _currentIndex,
+      );
+
+      if (audioUrl != null) {
+        await _studentService.saveAudioRecording(
+          studentId: widget.studentId!,
+          level: widget.level!,
+          itemIndex: _currentIndex,
+          audioUrl: audioUrl,
+        );
+        debugPrint('Audio recording saved for item $_currentIndex');
+      }
+    } catch (e) {
+      debugPrint('Error saving audio recording: $e');
+    }
+  }
 
   @override
   void initState() {
@@ -933,6 +963,16 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       await _ensureSpeechWarmUpIfNeeded();
 
+      // Start audio recording when speech recognition starts
+      if (!(widget.isTeacher ?? false) && widget.studentId != null) {
+        _currentRecordingPath = await AudioService.startRecording();
+        if (_currentRecordingPath != null) {
+          setState(() {
+            _isRecording = true;
+          });
+        }
+      }
+
       try {
         await _speech.cancel();
       } catch (_) {}
@@ -1032,6 +1072,14 @@ class _PracticeScreenState extends State<PracticeScreen>
       }
     } finally {
       _isStartingListening = false;
+      // Stop recording if speech failed to start
+      if (_isRecording && _currentRecordingPath != null) {
+        await AudioService.stopRecording();
+        setState(() {
+          _isRecording = false;
+          _currentRecordingPath = null;
+        });
+      }
     }
   }
 
@@ -1039,6 +1087,20 @@ class _PracticeScreenState extends State<PracticeScreen>
     _listeningWatchdogTimer?.cancel();
     _shouldAutoRestartListening = false;
     await _speech.stop();
+
+    // Stop audio recording when speech stops
+    if (_isRecording && _currentRecordingPath != null) {
+      final recordingPath = await AudioService.stopRecording();
+      if (recordingPath != null && widget.studentId != null) {
+        // Upload the recording and save URL
+        _uploadAndSaveRecording(recordingPath);
+      }
+      setState(() {
+        _isRecording = false;
+        _currentRecordingPath = null;
+      });
+    }
+
     if (mounted) {
       setState(() {
         _isListening = false;

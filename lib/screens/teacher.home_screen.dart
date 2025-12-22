@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:word_tales/screens/practice_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
+import 'package:word_tales/widgets/audio_player_widget.dart';
 import 'package:word_tales/services/student_service.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:word_tales/utils/words.dart';
@@ -603,42 +604,57 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                   : levels[levelNumber - 1]['color'],
                         ),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            item['type'] == 'Word'
-                                ? Icons.text_fields
-                                : Icons.short_text,
-                            color: levels[levelNumber - 1]['color'],
-                            size: 20.0,
+                          Row(
+                            children: [
+                              Icon(
+                                item['type'] == 'Word'
+                                    ? Icons.text_fields
+                                    : Icons.short_text,
+                                color: levels[levelNumber - 1]['color'],
+                                size: 20.0,
+                              ),
+                              const SizedBox(width: 12.0),
+                              Expanded(
+                                child: TextWidget(
+                                  text: item['content'],
+                                  fontSize: 16.0,
+                                  color: isItemFailed
+                                      ? Colors.red
+                                      : isItemCompleted
+                                          ? Colors.green
+                                          : black,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8.0, vertical: 4.0),
+                                decoration: BoxDecoration(
+                                  color: levels[levelNumber - 1]['color']
+                                      .withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(4.0),
+                                ),
+                                child: TextWidget(
+                                  text: item['type'],
+                                  fontSize: 12.0,
+                                  color: levels[levelNumber - 1]['color'],
+                                  isBold: true,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12.0),
-                          Expanded(
-                            child: TextWidget(
-                              text: item['content'],
-                              fontSize: 16.0,
-                              color: isItemFailed
-                                  ? Colors.red
-                                  : isItemCompleted
-                                      ? Colors.green
-                                      : black,
+                          // Audio recording player
+                          if (levelData['audioRecordings'] != null &&
+                              levelData['audioRecordings'][index] != null) ...[
+                            const SizedBox(height: 8.0),
+                            AudioPlayerWidget(
+                              audioUrl: levelData['audioRecordings'][index],
+                              title: 'Recording for ${item['content']}',
+                              width: double.infinity,
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8.0, vertical: 4.0),
-                            decoration: BoxDecoration(
-                              color: levels[levelNumber - 1]['color']
-                                  .withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(4.0),
-                            ),
-                            child: TextWidget(
-                              text: item['type'],
-                              fontSize: 12.0,
-                              color: levels[levelNumber - 1]['color'],
-                              isBold: true,
-                            ),
-                          ),
+                          ],
                         ],
                       ),
                     );
