@@ -813,6 +813,77 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     );
   }
 
+  void _showDeleteStudentDialog(Map<String, dynamic> student) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20.0),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.delete_forever, color: Colors.red, size: 30.0),
+            const SizedBox(width: 12.0),
+            TextWidget(
+              text: 'Delete Student',
+              fontSize: 20.0,
+              color: Colors.red,
+              isBold: true,
+            ),
+          ],
+        ),
+        content: TextWidget(
+          text: 'Are you sure you want to delete ${student['name']}? This action cannot be undone.',
+          fontSize: 16.0,
+          color: grey,
+          align: TextAlign.center,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: TextWidget(
+              text: 'Cancel',
+              fontSize: 16.0,
+              color: grey,
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                await _studentService.deleteStudent(student['id']);
+                _loadStudents();
+                Fluttertoast.showToast(
+                  msg: '${student['name']} deleted successfully',
+                  backgroundColor: Colors.green,
+                  textColor: white,
+                );
+              } catch (e) {
+                Fluttertoast.showToast(
+                  msg: 'Error deleting student: ${e.toString()}',
+                  backgroundColor: Colors.red,
+                  textColor: white,
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+            ),
+            child: TextWidget(
+              text: 'Delete',
+              fontSize: 16.0,
+              color: white,
+              isBold: true,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showLevelStudentList(int levelIndex) {
     final level = levels[levelIndex];
     final levelStats = getLevelStats(level['level']);
@@ -1556,7 +1627,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                             }
                           }
                         }
-
+    
                         return Container(
                           margin: const EdgeInsets.only(bottom: 16.0),
                           decoration: BoxDecoration(
@@ -1593,6 +1664,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                               fontSize: 14.0,
                               color: grey,
                               fontFamily: 'Regular',
+                            ),
+                            trailing: IconButton(
+                              icon: Icon(Icons.delete, color: Colors.red, size: 24.0),
+                              onPressed: () {
+                                _showDeleteStudentDialog(student);
+                              },
+                              tooltip: 'Delete Student',
                             ),
                             children: [
                               Container(
