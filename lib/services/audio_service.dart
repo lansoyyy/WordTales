@@ -2,9 +2,55 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
 
 class AudioService {
+  static final AudioRecorder _recorder = AudioRecorder();
   static final FirebaseStorage _storage = FirebaseStorage.instance;
+
+  /// Start recording audio and return recording path
+  static Future<String?> startRecording() async {
+    try {
+      if (await _recorder.hasPermission()) {
+        // Get temporary directory for recording
+        final Directory tempDir = await getTemporaryDirectory();
+        final String path =
+            '${tempDir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.wav';
+
+        // Use WAV format for better compatibility
+        await _recorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.wav,
+            bitRate: 128000,
+            sampleRate: 44100,
+          ),
+          path: path,
+        );
+        return path;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error starting recording: $e');
+      return null;
+    }
+  }
+
+  /// Stop recording and return audio file path
+  static Future<String?> stopRecording() async {
+    try {
+      final path = await _recorder.stop();
+      return path;
+    } catch (e) {
+      debugPrint('Error stopping recording: $e');
+      return null;
+    }
+  }
+
+  /// Check if currently recording
+  static Future<bool> isRecording() async {
+    return await _recorder.isRecording();
+  }
 
   /// Upload audio file to Firebase Storage
   static Future<String?> uploadAudio({

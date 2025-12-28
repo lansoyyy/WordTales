@@ -963,8 +963,15 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       await _ensureSpeechWarmUpIfNeeded();
 
-      // Audio recording temporarily disabled due to build issues
-      // TODO: Re-enable when record package is fixed
+      // Start audio recording when speech recognition starts
+      if (!(widget.isTeacher ?? false) && widget.studentId != null) {
+        _currentRecordingPath = await AudioService.startRecording();
+        if (_currentRecordingPath != null) {
+          setState(() {
+            _isRecording = true;
+          });
+        }
+      }
 
       try {
         await _speech.cancel();
@@ -1065,8 +1072,9 @@ class _PracticeScreenState extends State<PracticeScreen>
       }
     } finally {
       _isStartingListening = false;
-      // Audio recording cleanup (temporarily disabled)
+      // Stop recording if speech failed to start
       if (_isRecording && _currentRecordingPath != null) {
+        await AudioService.stopRecording();
         setState(() {
           _isRecording = false;
           _currentRecordingPath = null;
@@ -1080,8 +1088,13 @@ class _PracticeScreenState extends State<PracticeScreen>
     _shouldAutoRestartListening = false;
     await _speech.stop();
 
-    // Audio recording stop (temporarily disabled)
+    // Stop audio recording when speech stops
     if (_isRecording && _currentRecordingPath != null) {
+      final recordingPath = await AudioService.stopRecording();
+      if (recordingPath != null && widget.studentId != null) {
+        // Upload recording and save URL
+        _uploadAndSaveRecording(recordingPath);
+      }
       setState(() {
         _isRecording = false;
         _currentRecordingPath = null;
