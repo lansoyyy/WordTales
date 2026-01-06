@@ -667,7 +667,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: OutlinedButton(
                       onPressed: () {
                         Navigator.pop(context);
                         Navigator.push(
@@ -684,14 +684,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                           ),
                         );
                       },
-                      icon: Icon(Icons.play_arrow,
+                      child: Icon(Icons.play_arrow,
                           color: levels[levelNumber - 1]['color']),
-                      label: TextWidget(
-                        text: 'Practice',
-                        fontSize: 14.0,
-                        color: levels[levelNumber - 1]['color'],
-                        isBold: true,
-                      ),
                       style: OutlinedButton.styleFrom(
                         side:
                             BorderSide(color: levels[levelNumber - 1]['color']),
@@ -703,7 +697,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                   ),
                   const SizedBox(width: 8.0),
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: ElevatedButton(
                       onPressed: () async {
                         // Show confirmation dialog
                         final confirmed = await showDialog<bool>(
@@ -770,13 +764,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                           }
                         }
                       },
-                      icon: Icon(Icons.refresh, color: white, size: 18),
-                      label: TextWidget(
-                        text: 'Reset',
-                        fontSize: 14.0,
-                        color: white,
-                        isBold: true,
-                      ),
+                      child: Icon(Icons.refresh, color: white, size: 18),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange,
                         shape: RoundedRectangleBorder(
@@ -787,15 +775,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                   ),
                   const SizedBox(width: 8.0),
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: ElevatedButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close, color: white, size: 18),
-                      label: TextWidget(
-                        text: 'Close',
-                        fontSize: 14.0,
-                        color: white,
-                        isBold: true,
-                      ),
+                      child: Icon(Icons.close, color: white, size: 18),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: grey,
                         shape: RoundedRectangleBorder(
@@ -833,7 +815,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
           ],
         ),
         content: TextWidget(
-          text: 'Are you sure you want to delete ${student['name']}? This action cannot be undone.',
+          text:
+              'Are you sure you want to delete ${student['name']}? This action cannot be undone.',
           fontSize: 16.0,
           color: grey,
           align: TextAlign.center,
@@ -1627,7 +1610,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                             }
                           }
                         }
-    
+
                         return Container(
                           margin: const EdgeInsets.only(bottom: 16.0),
                           decoration: BoxDecoration(
@@ -1666,7 +1649,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                               fontFamily: 'Regular',
                             ),
                             trailing: IconButton(
-                              icon: Icon(Icons.delete, color: Colors.red, size: 24.0),
+                              icon: Icon(Icons.delete,
+                                  color: Colors.red, size: 24.0),
                               onPressed: () {
                                 _showDeleteStudentDialog(student);
                               },
