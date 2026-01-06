@@ -98,7 +98,10 @@ class _PracticeScreenState extends State<PracticeScreen>
   String? _currentRecordingPath;
   bool _isRecording = false;
 
-  Future<void> _uploadAndSaveRecording(String recordingPath) async {
+  Future<void> _uploadAndSaveRecording(
+    String recordingPath,
+    int itemIndex,
+  ) async {
     if (widget.studentId == null || widget.level == null) return;
 
     try {
@@ -106,17 +109,17 @@ class _PracticeScreenState extends State<PracticeScreen>
         filePath: recordingPath,
         studentId: widget.studentId!,
         level: widget.level!,
-        itemIndex: _currentIndex,
+        itemIndex: itemIndex,
       );
 
       if (audioUrl != null) {
         await _studentService.saveAudioRecording(
           studentId: widget.studentId!,
           level: widget.level!,
-          itemIndex: _currentIndex,
+          itemIndex: itemIndex,
           audioUrl: audioUrl,
         );
-        debugPrint('Audio recording saved for item $_currentIndex');
+        debugPrint('Audio recording saved for item $itemIndex');
       }
     } catch (e) {
       debugPrint('Error saving audio recording: $e');
@@ -964,9 +967,11 @@ class _PracticeScreenState extends State<PracticeScreen>
       await _ensureSpeechWarmUpIfNeeded();
 
       // Start audio recording when speech recognition starts
-      if (!(widget.isTeacher ?? false) && widget.studentId != null) {
+      if (!(widget.isTeacher ?? false) &&
+          widget.studentId != null &&
+          !_isRecording) {
         _currentRecordingPath = await AudioService.startRecording();
-        if (_currentRecordingPath != null) {
+        if (_currentRecordingPath != null && mounted) {
           setState(() {
             _isRecording = true;
           });
@@ -988,17 +993,20 @@ class _PracticeScreenState extends State<PracticeScreen>
         _hasSpeechError = false;
       });
 
-      _shouldAutoRestartListening = true;
-
       _lastSpeechHeardAt = DateTime.now();
 
       Future<void> startOnce() {
+        final type = practiceItems[_currentIndex]['type'];
         return _speech.listen(
           onResult: _onSpeechResult,
           partialResults: true,
           listenMode: stt.ListenMode.dictation,
-          listenFor: const Duration(seconds: 20),
-          pauseFor: const Duration(seconds: 2),
+          listenFor: type == 'Sentence'
+              ? const Duration(seconds: 25)
+              : const Duration(seconds: 20),
+          pauseFor: type == 'Sentence'
+              ? const Duration(seconds: 3)
+              : const Duration(seconds: 2),
           localeId: _selectedLocaleId,
           onSoundLevelChange: (level) {
             if (!mounted) return;
@@ -1031,6 +1039,16 @@ class _PracticeScreenState extends State<PracticeScreen>
       }
 
       if (!started) {
+        _shouldAutoRestartListening = false;
+        if (_isRecording && _currentRecordingPath != null) {
+          await AudioService.stopRecording();
+          if (mounted) {
+            setState(() {
+              _isRecording = false;
+              _currentRecordingPath = null;
+            });
+          }
+        }
         if (mounted) {
           setState(() {
             _isListening = false;
@@ -1054,9 +1072,21 @@ class _PracticeScreenState extends State<PracticeScreen>
         });
       }
 
+      _shouldAutoRestartListening = true;
+
       _startListeningWatchdog();
     } catch (e) {
       debugPrint('Error starting speech listening: $e');
+      _shouldAutoRestartListening = false;
+      if (_isRecording && _currentRecordingPath != null) {
+        await AudioService.stopRecording();
+        if (mounted) {
+          setState(() {
+            _isRecording = false;
+            _currentRecordingPath = null;
+          });
+        }
+      }
       if (mounted) {
         setState(() {
           _isListening = false;
@@ -1072,20 +1102,13 @@ class _PracticeScreenState extends State<PracticeScreen>
       }
     } finally {
       _isStartingListening = false;
-      // Stop recording if speech failed to start
-      if (_isRecording && _currentRecordingPath != null) {
-        await AudioService.stopRecording();
-        setState(() {
-          _isRecording = false;
-          _currentRecordingPath = null;
-        });
-      }
     }
   }
 
   Future<void> _stopListening() async {
     _listeningWatchdogTimer?.cancel();
     _shouldAutoRestartListening = false;
+    final int itemIndex = _currentIndex;
     await _speech.stop();
 
     // Stop audio recording when speech stops
@@ -1093,7 +1116,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       final recordingPath = await AudioService.stopRecording();
       if (recordingPath != null && widget.studentId != null) {
         // Upload recording and save URL
-        _uploadAndSaveRecording(recordingPath);
+        _uploadAndSaveRecording(recordingPath, itemIndex);
       }
       setState(() {
         _isRecording = false;
@@ -1149,11 +1172,9 @@ class _PracticeScreenState extends State<PracticeScreen>
     // generous.
     bool isMatch = baseMatch;
     if (type == 'Sentence') {
-      // For sentences, require all words to be correct; otherwise the
-      // sentence is treated as incorrect.
-      if (accuracy < 99.9) {
-        isMatch = false;
-      }
+      // For sentences, trust the similarity + word-overlap check.
+      // Character-perfect accuracy is too strict and leads to false negatives.
+      isMatch = baseMatch;
     } else if (type == 'Word') {
       // For multi-letter words, require reasonable character accuracy.
       // BUT if baseMatch (sophisticated check) already passed, trust it!
@@ -1419,14 +1440,13 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   double _wordMatchRatio(String t, String h) {
     final tWords = t.split(' ').where((w) => w.isNotEmpty).toList();
-    if (tWords.isEmpty) return 0.0;
     final matches = tWords.where((w) => h.contains(w)).length;
     return matches / tWords.length;
   }
 
-  bool _matchesTarget(String target, String hyp) {
+  bool _matchesTarget(String target, String hypothesis) {
     final t = _normalizeText(target);
-    final h = _normalizeText(hyp);
+    final h = _normalizeText(hypothesis);
     if (t.isEmpty || h.isEmpty) return false;
 
     // Use Filipino pronunciation service for matching
@@ -1526,20 +1546,27 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       // If the hypothesis is much shorter or much longer than the
       // target sentence, treat it as incorrect.
-      if (hWords.length < (tWords.length * 0.7) ||
-          hWords.length > (tWords.length * 1.3)) {
+      if (hWords.length < (tWords.length * 0.6) ||
+          hWords.length > (tWords.length * 1.4)) {
         return false;
       }
 
       // Require reasonably high similarity and word overlap.
-      double sentenceThreshold = 0.8;
+      // Too strict thresholds cause false negatives and user frustration.
+      double sentenceThreshold = 0.75;
+      if (_incorrectAttempts >= 1) {
+        sentenceThreshold = 0.70;
+      }
       if (_incorrectAttempts >= 2) {
-        sentenceThreshold = 0.75;
+        sentenceThreshold = 0.65;
       }
 
-      // Short sentences (up to 4 words) need near-perfect word
-      // overlap; longer ones can be slightly more lenient.
-      final double minWordRatio = tWords.length <= 4 ? 0.95 : 0.85;
+      // Short sentences (up to 4 words) should be strict-ish but not perfect;
+      // longer ones can be more lenient.
+      double minWordRatio = tWords.length <= 4 ? 0.85 : 0.75;
+      if (_incorrectAttempts >= 2) {
+        minWordRatio = tWords.length <= 4 ? 0.80 : 0.70;
+      }
 
       return similarity >= sentenceThreshold && wordRatio >= minWordRatio;
     }
@@ -1725,11 +1752,18 @@ class _PracticeScreenState extends State<PracticeScreen>
     super.dispose();
   }
 
-  void _nextItem({bool autoStartListening = false}) {
+  Future<void> _nextItem() async {
     // Always stop/reset speech service to ensure it's ready for next item
     // This is important after speech errors where _isListening may be false but service needs reset
     _listeningWatchdogTimer?.cancel();
-    _speech.stop();
+    _shouldAutoRestartListening = false;
+    if (_isListening || _isRecording) {
+      await _stopListening();
+    } else {
+      try {
+        await _speech.stop();
+      } catch (_) {}
+    }
 
     setState(() {
       // If the current item hasn't been marked correct or failed yet,
@@ -1755,16 +1789,6 @@ class _PracticeScreenState extends State<PracticeScreen>
 
     // After potentially marking a failed item, re-check if the level is done
     _checkLevelCompletion();
-
-    // Auto-start listening for next item if requested (e.g., after skip)
-    if (autoStartListening && _speechAvailable) {
-      // Small delay to ensure UI updates before starting
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (mounted) {
-          _startListening();
-        }
-      });
-    }
   }
 
   Future<void> _listenCurrentItem() async {
@@ -1883,19 +1907,26 @@ class _PracticeScreenState extends State<PracticeScreen>
           ),
         );
       },
-    ).then((_) {
+    ).then((_) async {
       // After dialog closes, check level completion or proceed to next
       _checkLevelCompletion();
       if (_completedItems.length + _failedItems.length < practiceItems.length) {
-        _proceedToNextItem();
+        await _proceedToNextItem();
       }
     });
   }
 
   // Proceed to next item without marking current as failed
-  void _proceedToNextItem() {
+  Future<void> _proceedToNextItem() async {
     _listeningWatchdogTimer?.cancel();
-    _speech.stop();
+    _shouldAutoRestartListening = false;
+    if (_isListening || _isRecording) {
+      await _stopListening();
+    } else {
+      try {
+        await _speech.stop();
+      } catch (_) {}
+    }
 
     setState(() {
       _currentIndex = (_currentIndex + 1) % practiceItems.length;
@@ -2377,27 +2408,30 @@ class _PracticeScreenState extends State<PracticeScreen>
                             ),
                           ),
                           const Spacer(),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(12.0),
-                            ),
-                            child: IconButton(
-                              tooltip: _isListening
-                                  ? 'Stop listening'
-                                  : 'Start speaking',
-                              icon: Transform.scale(
-                                scale: _isListening
-                                    ? (1.0 + (_soundLevel.clamp(0, 60) / 120))
-                                    : 1.0,
-                                child: Icon(
-                                  _isListening ? Icons.hearing : Icons.mic,
-                                  color: white,
-                                  size: 30.0,
-                                ),
+                          Visibility(
+                            visible: widget.isTeacher ?? false,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12.0),
                               ),
-                              onPressed:
-                                  _speechAvailable ? _toggleListening : null,
+                              child: IconButton(
+                                tooltip: _isListening
+                                    ? 'Stop listening'
+                                    : 'Start speaking',
+                                icon: Transform.scale(
+                                  scale: _isListening
+                                      ? (1.0 + (_soundLevel.clamp(0, 60) / 120))
+                                      : 1.0,
+                                  child: Icon(
+                                    _isListening ? Icons.hearing : Icons.mic,
+                                    color: white,
+                                    size: 30.0,
+                                  ),
+                                ),
+                                onPressed:
+                                    _speechAvailable ? _toggleListening : null,
+                              ),
                             ),
                           ),
                         ],
@@ -2953,8 +2987,8 @@ class _PracticeScreenState extends State<PracticeScreen>
                             Container(
                               margin: const EdgeInsets.only(bottom: 20.0),
                               child: ElevatedButton.icon(
-                                onPressed: () {
-                                  _nextItem(autoStartListening: true);
+                                onPressed: () async {
+                                  await _nextItem();
                                 },
                                 icon: Icon(Icons.skip_next,
                                     color: white, size: 28.0),

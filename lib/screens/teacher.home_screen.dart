@@ -586,6 +586,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                     final item = levels[levelNumber - 1]['content'][index];
                     final bool isItemCompleted = completedItems.contains(index);
                     final bool isItemFailed = failedItems.contains(index);
+                    String? audioUrl;
+                    final dynamic audioRecordings =
+                        levelData['audioRecordings'];
+                    if (audioRecordings is Map) {
+                      final dynamic urlValue =
+                          audioRecordings['$index'] ?? audioRecordings[index];
+                      if (urlValue is String && urlValue.trim().isNotEmpty) {
+                        audioUrl = urlValue;
+                      }
+                    }
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8.0),
                       padding: const EdgeInsets.all(12.0),
@@ -646,11 +656,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                             ],
                           ),
                           // Audio recording player
-                          if (levelData['audioRecordings'] != null &&
-                              levelData['audioRecordings'][index] != null) ...[
+                          if (audioUrl != null) ...[
                             const SizedBox(height: 8.0),
                             AudioPlayerWidget(
-                              audioUrl: levelData['audioRecordings'][index],
+                              audioUrl: audioUrl,
                               title: 'Recording for ${item['content']}',
                               width: double.infinity,
                             ),

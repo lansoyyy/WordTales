@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 class StudentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -196,20 +195,25 @@ class StudentService {
     List<int>? failedItems,
   }) async {
     try {
-      await _firestore.collection(_studentsCollection).doc(studentId).update({
-        'levelProgress.$level': {
-          'completed': true,
-          'score': score,
-          'totalItems': totalItems,
-          'date': DateTime.now().toString().split(' ')[0],
-          if (completedItems != null || failedItems != null)
-            'results': {
-              'completedItems': completedItems ?? <int>[],
-              'failedItems': failedItems ?? <int>[],
-            },
-          'audioRecordings': <String, String>{},
-        }
-      });
+      final updateData = <String, dynamic>{
+        'levelProgress.$level.completed': true,
+        'levelProgress.$level.score': score,
+        'levelProgress.$level.totalItems': totalItems,
+        'levelProgress.$level.date': DateTime.now().toString().split(' ')[0],
+        // Clear in-progress metadata when level is completed
+        'levelProgress.$level.inProgress': FieldValue.delete(),
+      };
+
+      if (completedItems != null || failedItems != null) {
+        updateData['levelProgress.$level.results.completedItems'] =
+            completedItems ?? <int>[];
+        updateData['levelProgress.$level.results.failedItems'] =
+            failedItems ?? <int>[];
+      }
+
+      await _firestore.collection(_studentsCollection).doc(studentId).update(
+            updateData,
+          );
     } catch (e) {
       print('Error updating level progress: $e');
       rethrow;
@@ -245,18 +249,14 @@ class StudentService {
   }) async {
     try {
       await _firestore.collection(_studentsCollection).doc(studentId).update({
-        'levelProgress.$level': {
-          'completed': false,
-          'score': score,
-          'totalItems': totalItems,
-          'date': DateTime.now().toString().split(' ')[0],
-          'inProgress': {
-            'currentIndex': currentIndex,
-            'completedItems': completedItems,
-            'failedItems': failedItems,
-            'incorrectAttempts': incorrectAttempts,
-          },
-        }
+        'levelProgress.$level.completed': false,
+        'levelProgress.$level.score': score,
+        'levelProgress.$level.totalItems': totalItems,
+        'levelProgress.$level.date': DateTime.now().toString().split(' ')[0],
+        'levelProgress.$level.inProgress.currentIndex': currentIndex,
+        'levelProgress.$level.inProgress.completedItems': completedItems,
+        'levelProgress.$level.inProgress.failedItems': failedItems,
+        'levelProgress.$level.inProgress.incorrectAttempts': incorrectAttempts,
       });
     } catch (e) {
       print('Error updating partial level progress: $e');
