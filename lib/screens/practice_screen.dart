@@ -137,17 +137,17 @@ class _PracticeScreenState extends State<PracticeScreen>
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 800),
       vsync: this,
-    )..repeat(reverse: true);
+    );
 
     _bounceController = AnimationController(
       duration: const Duration(milliseconds: 2000),
       vsync: this,
-    )..repeat(reverse: true);
+    );
 
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
-    )..repeat(reverse: true);
+    );
 
     _celebrationController = AnimationController(
       duration: const Duration(milliseconds: 500),
@@ -760,25 +760,11 @@ class _PracticeScreenState extends State<PracticeScreen>
               'Speech error: ${error.errorMsg} (permanent: ${error.permanent})');
           if (!mounted) return;
 
-          // Catch ALL errors and auto-restart listening immediately.
-          // Never show error to user - just keep trying until speech is captured.
+          // Don't auto-restart on errors - let user manually retry
           setState(() {
             _isListening = false;
+            _hasSpeechError = true;
           });
-
-          // Auto-restart listening after any error
-          if (_shouldAutoRestartListening && !(widget.isTeacher ?? false)) {
-            final bool isCurrentItemDone =
-                _completedItems.contains(_currentIndex) ||
-                    _failedItems.contains(_currentIndex);
-            if (!isCurrentItemDone) {
-              Future.delayed(const Duration(milliseconds: 200), () {
-                if (mounted && !_isListening && _shouldAutoRestartListening) {
-                  _startListening();
-                }
-              });
-            }
-          }
         },
         finalTimeout: const Duration(seconds: 10),
       );
@@ -862,20 +848,8 @@ class _PracticeScreenState extends State<PracticeScreen>
     });
     if (stopped) {
       _listeningWatchdogTimer?.cancel();
-      if (_shouldAutoRestartListening && !(widget.isTeacher ?? false)) {
-        final bool isCurrentItemDone =
-            _completedItems.contains(_currentIndex) ||
-                _failedItems.contains(_currentIndex);
-
-        if (!isCurrentItemDone) {
-          // Restart immediately - no delay, no conditions
-          Future.delayed(const Duration(milliseconds: 150), () {
-            if (mounted && !_isListening && _shouldAutoRestartListening) {
-              _startListening();
-            }
-          });
-        }
-      }
+      // Don't auto-restart listening - let user manually click Practice button
+      _shouldAutoRestartListening = false;
     }
   }
 
@@ -901,41 +875,15 @@ class _PracticeScreenState extends State<PracticeScreen>
       if (DateTime.now().difference(last) > const Duration(seconds: 3)) {
         // Restart faster - don't wait 6 seconds
         timer.cancel();
-        await _startListening();
+        // Don't auto-restart - let user manually click Practice button
+        _shouldAutoRestartListening = false;
       }
     });
   }
 
   Future<void> _ensureSpeechWarmUpIfNeeded() async {
-    if (!Platform.isAndroid) return;
-    if (_didWarmUpSpeech) return;
-    if (!_speechAvailable) return;
-    if (_isListening) return;
-    _didWarmUpSpeech = true;
-
-    _isWarmingUpSpeech = true;
-    try {
-      try {
-        await _speech.stop();
-      } catch (_) {}
-
-      await _speech.listen(
-        onResult: (_) {},
-        partialResults: false,
-        listenMode: stt.ListenMode.dictation,
-        listenFor: const Duration(seconds: 1),
-        pauseFor: const Duration(seconds: 1),
-        localeId: _selectedLocaleId,
-      );
-
-      await Future.delayed(const Duration(milliseconds: 650));
-    } catch (_) {
-    } finally {
-      try {
-        await _speech.stop();
-      } catch (_) {}
-      _isWarmingUpSpeech = false;
-    }
+    // Skip warm-up - it was interfering with speech recognition
+    return;
   }
 
   Future<void> _startListening() async {
@@ -964,7 +912,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       _shouldAutoRestartListening = false;
       await _flutterTts.stop();
 
-      await _ensureSpeechWarmUpIfNeeded();
+      // Skip warm-up - it was interfering with speech recognition
 
       // Start audio recording when speech recognition starts
       if (!(widget.isTeacher ?? false) &&
@@ -995,49 +943,40 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       _lastSpeechHeardAt = DateTime.now();
 
-      Future<void> startOnce() {
-        final type = practiceItems[_currentIndex]['type'];
-        return _speech.listen(
-          onResult: _onSpeechResult,
-          partialResults: true,
-          listenMode: stt.ListenMode.dictation,
-          listenFor: type == 'Sentence'
-              ? const Duration(seconds: 25)
-              : const Duration(seconds: 20),
-          pauseFor: type == 'Sentence'
-              ? const Duration(seconds: 3)
-              : const Duration(seconds: 2),
-          localeId: _selectedLocaleId,
-          onSoundLevelChange: (level) {
-            if (!mounted) return;
-            if (level > 1.5) {
-              _lastSpeechHeardAt = DateTime.now();
+      final type = practiceItems[_currentIndex]['type'];
+
+      // Simplified speech listening - no retries, just start once
+      await _speech.listen(
+        onResult: _onSpeechResult,
+        partialResults: true,
+        listenMode: stt.ListenMode.dictation,
+        listenFor: type == 'Sentence'
+            ? const Duration(seconds: 25)
+            : const Duration(seconds: 20),
+        pauseFor: type == 'Sentence'
+            ? const Duration(seconds: 3)
+            : const Duration(seconds: 2),
+        localeId: _selectedLocaleId,
+        onSoundLevelChange: (level) {
+          if (!mounted) return;
+          if (level > 1.5) {
+            _lastSpeechHeardAt = DateTime.now();
+          }
+          // Only update sound level when actually listening and detecting speech
+          if (_isListening && level > 2.0) {
+            if (mounted) {
+              setState(() {
+                _soundLevel = level;
+              });
             }
-            setState(() {
-              _soundLevel = level;
-            });
-          },
-        );
-      }
+          }
+        },
+      );
 
-      await startOnce();
-      await Future.delayed(const Duration(milliseconds: 700));
+      // Wait a bit to check if listening started
+      await Future.delayed(const Duration(milliseconds: 500));
+
       bool started = _speech.isListening || _isListening;
-      if (!started) {
-        await Future.delayed(const Duration(milliseconds: 700));
-        started = _speech.isListening || _isListening;
-      }
-
-      if (!started) {
-        try {
-          await _speech.cancel();
-        } catch (_) {}
-        await Future.delayed(const Duration(milliseconds: 350));
-        await startOnce();
-        await Future.delayed(const Duration(milliseconds: 700));
-        started = _speech.isListening || _isListening;
-      }
-
       if (!started) {
         _shouldAutoRestartListening = false;
         if (_isRecording && _currentRecordingPath != null) {
@@ -1058,7 +997,7 @@ class _PracticeScreenState extends State<PracticeScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                  'Microphone not ready yet. Please try again in a moment.'),
+                  'Microphone not ready. Please tap Practice button again.'),
               duration: Duration(seconds: 3),
             ),
           );
@@ -1071,8 +1010,6 @@ class _PracticeScreenState extends State<PracticeScreen>
           _isListening = true;
         });
       }
-
-      _shouldAutoRestartListening = true;
 
       _startListeningWatchdog();
     } catch (e) {
