@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:word_tales/screens/practice_screen.dart';
+import 'package:word_tales/screens/teacher_practice_admin_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
 import 'package:word_tales/widgets/audio_player_widget.dart';
@@ -1489,7 +1490,74 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                   },
                 ),
               ),
-
+              const SizedBox(height: 16.0),
+              // Practice Items Management Section
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16.0),
+                decoration: BoxDecoration(
+                  color: white,
+                  borderRadius: BorderRadius.circular(16.0),
+                  border: Border.all(color: secondary, width: 2.0),
+                  boxShadow: [
+                    BoxShadow(
+                      color: grey.withOpacity(0.3),
+                      blurRadius: 8.0,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextWidget(
+                      text: 'Manage Practice Items',
+                      fontSize: 18.0,
+                      color: black,
+                      isBold: true,
+                    ),
+                    const SizedBox(height: 12.0),
+                    ...List.generate(levels.length, (index) {
+                      final level = levels[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    TeacherPracticeAdminScreen(
+                                  level: level['level'],
+                                  levelTitle: level['title'],
+                                ),
+                              ),
+                            );
+                          },
+                          icon: IconTheme(
+                            data: IconThemeData(color: white),
+                            child: Icon(level['icon']),
+                          ),
+                          label: TextWidget(
+                            text: '${level['title']} - ${level['description']}',
+                            fontSize: 16.0,
+                            color: white,
+                            isBold: true,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: level['color'],
+                            foregroundColor: white,
+                            padding: const EdgeInsets.symmetric(vertical: 14.0),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10.0),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
               const SizedBox(height: 32.0),
               TextWidget(
                 text: 'Students Progress',

@@ -9,6 +9,7 @@ import 'package:word_tales/utils/words.dart';
 import 'package:word_tales/services/student_service.dart';
 import 'package:word_tales/services/auth_service.dart';
 import 'package:word_tales/services/audio_service.dart';
+import 'package:word_tales/services/practice_item_service.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
@@ -91,6 +92,7 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   // Services
   final StudentService _studentService = StudentService();
+  final PracticeItemService _practiceItemService = PracticeItemService();
   final FlutterTts _flutterTts = FlutterTts();
   bool _hasListenedCurrentItem = false;
 
@@ -130,7 +132,6 @@ class _PracticeScreenState extends State<PracticeScreen>
   void initState() {
     super.initState();
     _initializePracticeItems();
-    _totalItems = practiceItems.length;
 
     _speech = stt.SpeechToText();
 
@@ -388,15 +389,18 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
   }
 
-  void _initializePracticeItems() {
+  void _initializePracticeItems() async {
     // Initialize practice items based on level using words from words.dart
     practiceItems = [];
+
+    // Get default items based on level
+    List<Map<String, String>> defaultItems = [];
 
     switch (widget.level) {
       case 1:
         // Use 1-letter words
         for (int i = 0; i < oneLetterWords.length && i < 10; i++) {
-          practiceItems.add({
+          defaultItems.add({
             'type': 'Word',
             'content': oneLetterWords[i],
             'emoji': _getEmojiForLetter(oneLetterWords[i]),
@@ -406,7 +410,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       case 2:
         // Use 2-letter words
         for (int i = 0; i < twoLetterWords.length && i < 15; i++) {
-          practiceItems.add({
+          defaultItems.add({
             'type': 'Word',
             'content': twoLetterWords[i],
             'emoji': _getEmojiForWord(twoLetterWords[i]),
@@ -416,7 +420,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       case 3:
         // Use 3-letter words
         for (int i = 0; i < threeLetterWords.length && i < 20; i++) {
-          practiceItems.add({
+          defaultItems.add({
             'type': 'Word',
             'content': threeLetterWords[i],
             'emoji': _getEmojiForWord(threeLetterWords[i]),
@@ -426,7 +430,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       case 4:
         // Use 4-letter words
         for (int i = 0; i < fourLetterWords.length && i < 25; i++) {
-          practiceItems.add({
+          defaultItems.add({
             'type': 'Word',
             'content': fourLetterWords[i],
             'emoji': _getEmojiForWord(fourLetterWords[i]),
@@ -435,15 +439,55 @@ class _PracticeScreenState extends State<PracticeScreen>
         break;
       case 5:
         // For level 5, we'll create simple sentences using the words
-        practiceItems = _createSimpleSentences();
+        defaultItems = _createSimpleSentences();
         break;
       default:
         // Default to some common words
-        practiceItems = [
+        defaultItems = [
           {'type': 'Word', 'content': 'CAT', 'emoji': '🐱'},
           {'type': 'Word', 'content': 'DOG', 'emoji': '🐶'},
           {'type': 'Word', 'content': 'SUN', 'emoji': '☀️'},
         ];
+    }
+
+    // Load custom items from Firebase
+    if (widget.studentId != null && widget.level != null) {
+      try {
+        final customItems = await _practiceItemService.getCustomPracticeItems(
+          level: widget.level!,
+          studentId: widget.studentId!,
+        );
+
+        // Convert custom items to the format used by practice screen
+        final List<Map<String, String>> formattedCustomItems = customItems
+            .map((item) => {
+                  'type': item['type']?.toString() ?? 'Word',
+                  'content': item['content']?.toString() ?? '',
+                  'emoji': item['emoji']?.toString() ?? '',
+                })
+            .toList();
+
+        // Use custom items if available, otherwise use default items
+        if (formattedCustomItems.isNotEmpty) {
+          practiceItems = formattedCustomItems;
+        } else {
+          practiceItems = defaultItems;
+        }
+      } catch (e) {
+        debugPrint('Error loading custom practice items: $e');
+        // Fallback to default items if there's an error
+        practiceItems = defaultItems;
+      }
+    } else {
+      // If no studentId, use default items
+      practiceItems = defaultItems;
+    }
+
+    // Update total items after loading
+    if (mounted) {
+      setState(() {
+        _totalItems = practiceItems.length;
+      });
     }
   }
 
