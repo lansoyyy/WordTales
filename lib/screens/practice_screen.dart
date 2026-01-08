@@ -840,6 +840,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     setState(() {
       if (status == 'listening') {
         _isListening = true;
+        _hasSpeechError = false; // Reset error when speech starts successfully
       }
       if (stopped) {
         _isListening = false;
@@ -938,7 +939,7 @@ class _PracticeScreenState extends State<PracticeScreen>
         _confidence = 0.0;
         _isListening = false;
         _soundLevel = 0.0;
-        _hasSpeechError = false;
+        _hasSpeechError = false; // Reset error flag when starting listening
       });
 
       _lastSpeechHeardAt = DateTime.now();
