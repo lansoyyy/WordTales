@@ -915,17 +915,21 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       // Skip warm-up - it was interfering with speech recognition
 
-      // Start audio recording when speech recognition starts
-      if (!(widget.isTeacher ?? false) &&
-          widget.studentId != null &&
-          !_isRecording) {
-        _currentRecordingPath = await AudioService.startRecording();
-        if (_currentRecordingPath != null && mounted) {
+      // Stop any existing recording before starting speech recognition to avoid microphone conflict
+      if (_isRecording && _currentRecordingPath != null) {
+        await AudioService.stopRecording();
+        // Add small delay to ensure microphone is properly released
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (mounted) {
           setState(() {
-            _isRecording = true;
+            _isRecording = false;
+            _currentRecordingPath = null;
           });
         }
       }
+
+      // Don't start audio recording during speech recognition to avoid microphone conflict
+      // Recording will be handled after speech completes
 
       try {
         await _speech.cancel();
@@ -952,19 +956,20 @@ class _PracticeScreenState extends State<PracticeScreen>
         partialResults: true,
         listenMode: stt.ListenMode.dictation,
         listenFor: type == 'Sentence'
-            ? const Duration(seconds: 25)
-            : const Duration(seconds: 20),
+            ? const Duration(seconds: 30)
+            : const Duration(seconds: 25),
         pauseFor: type == 'Sentence'
-            ? const Duration(seconds: 3)
-            : const Duration(seconds: 2),
+            ? const Duration(seconds: 5)
+            : const Duration(seconds: 4),
         localeId: _selectedLocaleId,
         onSoundLevelChange: (level) {
           if (!mounted) return;
-          if (level > 1.5) {
+          if (level > 0.5) {
             _lastSpeechHeardAt = DateTime.now();
           }
-          // Only update sound level when actually listening and detecting speech
-          if (_isListening && level > 2.0) {
+          // Update sound level when listening and detecting speech
+          // Lowered threshold from 2.0 to 0.5 to be more permissive
+          if (_isListening && level > 0.5) {
             if (mounted) {
               setState(() {
                 _soundLevel = level;
