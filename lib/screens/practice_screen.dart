@@ -16,15 +16,16 @@ import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 
 class PracticeScreen extends StatefulWidget {
-  bool? isTeacher;
-  int? level;
-  String? levelTitle;
-  String? levelDescription;
-  String? studentId;
-  String? studentName;
-  String? teacherName;
-  VoidCallback? onLevelCompleted;
-  Function(int score, int totalItems)? onLevelCompletedWithScore;
+  final bool? isTeacher;
+  final int? level;
+  final String? levelTitle;
+  final String? levelDescription;
+  final String? studentId;
+  final String? studentName;
+  final String? teacherName;
+  final String? teacherId;
+  final VoidCallback? onLevelCompleted;
+  final Function(int score, int totalItems)? onLevelCompletedWithScore;
 
   PracticeScreen({
     this.isTeacher = false,
@@ -34,6 +35,7 @@ class PracticeScreen extends StatefulWidget {
     this.studentId,
     this.studentName,
     this.teacherName,
+    this.teacherId,
     this.onLevelCompleted,
     this.onLevelCompletedWithScore,
   });
@@ -95,6 +97,8 @@ class _PracticeScreenState extends State<PracticeScreen>
   final PracticeItemService _practiceItemService = PracticeItemService();
   final FlutterTts _flutterTts = FlutterTts();
   bool _hasListenedCurrentItem = false;
+  StreamSubscription<List<Map<String, dynamic>>>? _practiceItemsSubscription;
+  bool _hasStartedPracticeSession = false;
 
   // Audio recording
   String? _currentRecordingPath;
@@ -450,38 +454,8 @@ class _PracticeScreenState extends State<PracticeScreen>
         ];
     }
 
-    // Load custom items from Firebase
-    if (widget.studentId != null && widget.level != null) {
-      try {
-        final customItems = await _practiceItemService.getCustomPracticeItems(
-          level: widget.level!,
-          studentId: widget.studentId!,
-        );
-
-        // Convert custom items to the format used by practice screen
-        final List<Map<String, String>> formattedCustomItems = customItems
-            .map((item) => {
-                  'type': item['type']?.toString() ?? 'Word',
-                  'content': item['content']?.toString() ?? '',
-                  'emoji': item['emoji']?.toString() ?? '',
-                })
-            .toList();
-
-        // Use custom items if available, otherwise use default items
-        if (formattedCustomItems.isNotEmpty) {
-          practiceItems = formattedCustomItems;
-        } else {
-          practiceItems = defaultItems;
-        }
-      } catch (e) {
-        debugPrint('Error loading custom practice items: $e');
-        // Fallback to default items if there's an error
-        practiceItems = defaultItems;
-      }
-    } else {
-      // If no studentId, use default items
-      practiceItems = defaultItems;
-    }
+    // Default immediately (UI shouldn't wait on network)
+    practiceItems = defaultItems;
 
     // Update total items after loading
     if (mounted) {
@@ -489,6 +463,66 @@ class _PracticeScreenState extends State<PracticeScreen>
         _totalItems = practiceItems.length;
       });
     }
+
+    // Subscribe to teacher-level practice items so teacher edits are reflected.
+    if (widget.level == null) return;
+    final String? teacherId = widget.teacherId;
+    if (teacherId == null || teacherId.trim().isEmpty) return;
+
+    try {
+      await _practiceItemService.ensureDefaultPracticeItems(
+        teacherId: teacherId,
+        level: widget.level!,
+        defaultItems: defaultItems,
+      );
+    } catch (e) {
+      debugPrint('Error ensuring default practice items: $e');
+    }
+
+    await _practiceItemsSubscription?.cancel();
+    _practiceItemsSubscription = _practiceItemService
+        .streamCustomPracticeItems(
+          level: widget.level!,
+          teacherId: teacherId,
+        )
+        .listen((items) {
+      if (!mounted) return;
+
+      final formatted = items
+          .map((item) {
+            final String type = (item['type'] ?? 'Word').toString();
+            final String content = (item['content'] ?? '').toString();
+            final String emojiRaw = (item['emoji'] ?? '').toString();
+            final String emoji = emojiRaw.trim().isNotEmpty
+                ? emojiRaw
+                : _getEmojiForPracticeItem(type: type, content: content);
+            return {
+              'type': type,
+              'content': content,
+              'emoji': emoji,
+            };
+          })
+          .toList();
+
+      setState(() {
+        practiceItems = formatted.isNotEmpty ? formatted : defaultItems;
+        _totalItems = practiceItems.length;
+        if (_currentIndex >= practiceItems.length) {
+          _currentIndex = 0;
+        }
+      });
+    });
+  }
+
+  String _getEmojiForPracticeItem({required String type, required String content}) {
+    final String normalized = content.trim();
+    if (type == 'Word' && normalized.length == 1) {
+      return _getEmojiForLetter(normalized);
+    }
+    if (type == 'Word') {
+      return _getEmojiForWord(normalized);
+    }
+    return '📝';
   }
 
   String _getEmojiForLetter(String letter) {
@@ -932,6 +966,12 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   Future<void> _startListening() async {
+    if (!_hasStartedPracticeSession) {
+      _hasStartedPracticeSession = true;
+      await _practiceItemsSubscription?.cancel();
+      _practiceItemsSubscription = null;
+    }
+
     if (Platform.isAndroid && !_micPermissionGranted) {
       await _ensureMicPermission();
       if (!_micPermissionGranted) {
@@ -1732,6 +1772,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     _celebrationController.dispose();
     _incorrectFeedbackTimer?.cancel();
     _listeningWatchdogTimer?.cancel();
+    _practiceItemsSubscription?.cancel();
     _flutterTts.stop();
     if (_isListening) {
       _speech.stop();

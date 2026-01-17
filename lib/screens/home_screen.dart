@@ -26,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // Student information
   String? _studentId;
   String? _studentName;
+  String? _teacherId;
   final StudentService _studentService = StudentService();
 
   // Track level completion with scores
@@ -144,6 +145,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           setState(() {
             _studentName = studentName;
             _studentId = student['id'];
+            _teacherId = teacherId;
             _levelCompletion = updatedLevelCompletion;
             _highestUnlockedLevel = highestUnlocked;
           });
@@ -151,6 +153,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           // Student record not found, but keep name from preferences
           setState(() {
             _studentName = studentName;
+            _teacherId = teacherId;
           });
         }
       }
@@ -522,6 +525,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                                     level['description'],
                                                 studentId: _studentId,
                                                 studentName: _studentName,
+                                                teacherId:
+                                                    _teacherId ?? 'default_teacher',
                                                 onLevelCompleted: () {
                                                   if (level['level'] ==
                                                       _highestUnlockedLevel) {
@@ -637,6 +642,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                           ['description'],
                                       studentId: _studentId,
                                       studentName: _studentName,
+                                      teacherId:
+                                          _teacherId ?? 'default_teacher',
                                       onLevelCompletedWithScore:
                                           (score, totalItems) {
                                         _updateLevelCompletion(

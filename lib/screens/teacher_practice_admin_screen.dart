@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
-import 'package:word_tales/widgets/button_widget.dart';
 import 'package:word_tales/services/practice_item_service.dart';
+import 'package:word_tales/utils/words.dart';
+import 'dart:async';
 
 class TeacherPracticeAdminScreen extends StatefulWidget {
   final int level;
   final String levelTitle;
+  final String teacherId;
 
   const TeacherPracticeAdminScreen({
     required this.level,
     required this.levelTitle,
+    required this.teacherId,
   });
 
   @override
@@ -24,6 +27,20 @@ class _TeacherPracticeAdminScreenState
   List<Map<String, dynamic>> _practiceItems = [];
   bool _isLoading = true;
   String? _selectedItemId;
+  StreamSubscription<List<Map<String, dynamic>>>? _itemsSubscription;
+
+  void _showStatusSnackBar({
+    required String message,
+    required Color backgroundColor,
+  }) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: backgroundColor,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -31,19 +48,89 @@ class _TeacherPracticeAdminScreenState
     _loadPracticeItems();
   }
 
+  List<Map<String, String>> _defaultItemsForLevel() {
+    if (widget.level == 1) {
+      return oneLetterWords
+          .take(10)
+          .map((w) => {'type': 'Word', 'content': w, 'emoji': ''})
+          .toList();
+    }
+    if (widget.level == 2) {
+      return twoLetterWords
+          .take(15)
+          .map((w) => {'type': 'Word', 'content': w, 'emoji': ''})
+          .toList();
+    }
+    if (widget.level == 3) {
+      return threeLetterWords
+          .take(20)
+          .map((w) => {'type': 'Word', 'content': w, 'emoji': ''})
+          .toList();
+    }
+    if (widget.level == 4) {
+      return fourLetterWords
+          .take(25)
+          .map((w) => {'type': 'Word', 'content': w, 'emoji': ''})
+          .toList();
+    }
+    if (widget.level == 5) {
+      final sentences = [
+        ['THE', 'CAT', 'IS', 'HAPPY'].join(' '),
+        ['I', 'CAN', 'SEE', 'THE', 'SUN'].join(' '),
+        ['WE', 'PLAY', 'WITH', 'THE', 'BALL'].join(' '),
+        ['THE', 'DOG', 'RUNS', 'FAST'].join(' '),
+        ['I', 'LIKE', 'TO', 'READ', 'BOOKS'].join(' '),
+        ['THE', 'BIRD', 'SINGS', 'NICE'].join(' '),
+        ['WE', 'CAN', 'JUMP', 'HIGH'].join(' '),
+        ['THE', 'FISH', 'SWIMS', 'IN', 'WATER'].join(' '),
+        ['I', 'LOVE', 'MY', 'FAMILY'].join(' '),
+        ['THE', 'TREE', 'IS', 'TALL'].join(' '),
+        ['WE', 'WALK', 'TO', 'SCHOOL'].join(' '),
+        ['THE', 'MOON', 'SHINES', 'BRIGHT'].join(' '),
+        ['I', 'DRAW', 'A', 'PICTURE'].join(' '),
+        ['THE', 'CAR', 'GOES', 'FAST'].join(' '),
+        ['WE', 'SING', 'A', 'SONG'].join(' '),
+        ['THE', 'BABY', 'IS', 'CUTE'].join(' '),
+        ['I', 'EAT', 'MY', 'FOOD'].join(' '),
+        ['THE', 'STAR', 'IS', 'BRIGHT'].join(' '),
+        ['WE', 'DANCE', 'TOGETHER'].join(' '),
+        ['THE', 'RAIN', 'FALLS', 'DOWN'].join(' '),
+      ];
+      return sentences
+          .map((s) => {'type': 'Sentence', 'content': s, 'emoji': ''})
+          .toList();
+    }
+    return [];
+  }
+
   Future<void> _loadPracticeItems() async {
     setState(() {
       _isLoading = true;
     });
 
-    final items = await _practiceItemService.getCustomPracticeItems(
-      level: widget.level,
-      studentId: 'admin', // Admin can see all items
-    );
+    try {
+      await _practiceItemService.ensureDefaultPracticeItems(
+        teacherId: widget.teacherId,
+        level: widget.level,
+        defaultItems: _defaultItemsForLevel(),
+      );
+    } catch (_) {
+      // ignore
+    }
 
-    setState(() {
-      _practiceItems = items;
-      _isLoading = false;
+    await _itemsSubscription?.cancel();
+    _itemsSubscription = _practiceItemService
+        .streamCustomPracticeItems(
+          level: widget.level,
+          teacherId: widget.teacherId,
+          includeInactive: true,
+        )
+        .listen((items) {
+      if (!mounted) return;
+      setState(() {
+        _practiceItems = items;
+        _isLoading = false;
+      });
     });
   }
 
@@ -52,7 +139,7 @@ class _TeacherPracticeAdminScreenState
   }
 
   Future<void> _showAddItemDialog() async {
-    final typeController = TextEditingController();
+    final typeController = TextEditingController(text: 'Word');
     final contentController = TextEditingController();
     final emojiController = TextEditingController();
 
@@ -80,7 +167,7 @@ class _TeacherPracticeAdminScreenState
               ),
               const SizedBox(height: 8.0),
               DropdownButtonFormField<String>(
-                value: 'Word',
+                value: typeController.text,
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: white,
@@ -163,7 +250,7 @@ class _TeacherPracticeAdminScreenState
           ElevatedButton(
             onPressed: () async {
               final type = typeController.text.trim();
-              final content = contentController.text.trim();
+              final content = contentController.text.trim().toUpperCase();
               final emoji = emojiController.text.trim();
 
               if (type.isEmpty || content.isEmpty) {
@@ -176,15 +263,28 @@ class _TeacherPracticeAdminScreenState
                 return;
               }
 
-              await _practiceItemService.addCustomPracticeItem(
-                teacherId: 'admin',
+              final success = await _practiceItemService.addCustomPracticeItem(
+                teacherId: widget.teacherId,
                 level: widget.level,
                 type: type,
                 content: content,
                 emoji: emoji,
               );
 
+              if (!success) {
+                _showStatusSnackBar(
+                  message: 'Failed to add item. Please check Firestore access.',
+                  backgroundColor: Colors.red,
+                );
+                return;
+              }
+
+              if (!context.mounted) return;
               Navigator.pop(context);
+              _showStatusSnackBar(
+                message: 'Item added',
+                backgroundColor: Colors.green,
+              );
               await _refreshItems();
             },
             style: ElevatedButton.styleFrom(
@@ -321,7 +421,7 @@ class _TeacherPracticeAdminScreenState
           ElevatedButton(
             onPressed: () async {
               final type = typeController.text.trim();
-              final content = contentController.text.trim();
+              final content = contentController.text.trim().toUpperCase();
               final emoji = emojiController.text.trim();
 
               if (type.isEmpty || content.isEmpty) {
@@ -334,14 +434,29 @@ class _TeacherPracticeAdminScreenState
                 return;
               }
 
-              await _practiceItemService.updateCustomPracticeItem(
+              final success =
+                  await _practiceItemService.updateCustomPracticeItem(
                 itemId: item['id'],
                 type: type,
                 content: content,
                 emoji: emoji,
               );
 
+              if (!success) {
+                _showStatusSnackBar(
+                  message:
+                      'Failed to update item. Please check Firestore access.',
+                  backgroundColor: Colors.red,
+                );
+                return;
+              }
+
+              if (!context.mounted) return;
               Navigator.pop(context);
+              _showStatusSnackBar(
+                message: 'Item updated',
+                backgroundColor: Colors.green,
+              );
               await _refreshItems();
             },
             style: ElevatedButton.styleFrom(
@@ -394,11 +509,25 @@ class _TeacherPracticeAdminScreenState
           ),
           ElevatedButton(
             onPressed: () async {
-              await _practiceItemService.deleteCustomPracticeItem(
+              final success = await _practiceItemService.deleteCustomPracticeItem(
                 itemId: item['id'],
               );
 
+              if (!success) {
+                _showStatusSnackBar(
+                  message:
+                      'Failed to delete item. Please check Firestore access.',
+                  backgroundColor: Colors.red,
+                );
+                return;
+              }
+
+              if (!context.mounted) return;
               Navigator.pop(context);
+              _showStatusSnackBar(
+                message: 'Item deleted',
+                backgroundColor: Colors.green,
+              );
               await _refreshItems();
             },
             style: ElevatedButton.styleFrom(
@@ -420,6 +549,12 @@ class _TeacherPracticeAdminScreenState
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _itemsSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -501,6 +636,10 @@ class _TeacherPracticeAdminScreenState
                   itemBuilder: (context, index) {
                     final item = _practiceItems[index];
                     final isActive = item['is_active'] == true;
+                    final String emoji =
+                        (item['emoji'] ?? '').toString().trim().isNotEmpty
+                            ? item['emoji'].toString()
+                            : '🔤';
 
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12.0),
@@ -518,7 +657,7 @@ class _TeacherPracticeAdminScreenState
                           backgroundColor: primary,
                           radius: 20.0,
                           child: TextWidget(
-                            text: item['emoji'] ?? '',
+                            text: emoji,
                             fontSize: 24.0,
                           ),
                         ),
@@ -576,10 +715,26 @@ class _TeacherPracticeAdminScreenState
                               icon: const Icon(Icons.toggle_on),
                               color: primary,
                               onPressed: () async {
-                                await _practiceItemService
+                                final success = await _practiceItemService
                                     .toggleCustomPracticeItem(
                                   itemId: item['id'],
                                   isActive: !isActive,
+                                );
+
+                                if (!success) {
+                                  _showStatusSnackBar(
+                                    message:
+                                        'Failed to update status. Please check Firestore access.',
+                                    backgroundColor: Colors.red,
+                                  );
+                                  return;
+                                }
+
+                                _showStatusSnackBar(
+                                  message: !isActive
+                                      ? 'Item activated'
+                                      : 'Item deactivated',
+                                  backgroundColor: Colors.green,
                                 );
                                 await _refreshItems();
                               },

@@ -690,6 +690,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                   ['description'],
                               isTeacher: true,
                               teacherName: widget.teacherName,
+                              teacherId: widget.teacherId,
                             ),
                           ),
                         );
@@ -1530,6 +1531,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                     TeacherPracticeAdminScreen(
                                   level: level['level'],
                                   levelTitle: level['title'],
+                                  teacherId: widget.teacherId,
                                 ),
                               ),
                             );
