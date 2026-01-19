@@ -1246,10 +1246,9 @@ class _PracticeScreenState extends State<PracticeScreen>
         _markCurrentItemAsCorrect();
       }
     } else if (_recognizedText.isNotEmpty) {
-      // Incorrect answer - mark as failed and proceed
       if (!_completedItems.contains(_currentIndex) &&
           !_failedItems.contains(_currentIndex)) {
-        _markCurrentItemAsIncorrect();
+        _showIncorrectFeedbackMessage();
       }
     }
   }
@@ -1324,9 +1323,12 @@ class _PracticeScreenState extends State<PracticeScreen>
       _showIncorrectFeedback = true;
     });
 
-    // After 2 incorrect attempts, allow students to move to the next item via popup
-    if (!(widget.isTeacher ?? false) && _incorrectAttempts == 2) {
-      _showNextItemPopup();
+    if (!(widget.isTeacher ?? false) && _incorrectAttempts >= 2) {
+      if (!_completedItems.contains(_currentIndex) &&
+          !_failedItems.contains(_currentIndex)) {
+        _markCurrentItemAsIncorrect();
+      }
+      return;
     }
 
     // Clear previous timer if exists
@@ -1411,11 +1413,12 @@ class _PracticeScreenState extends State<PracticeScreen>
       _showIncorrectFeedback = true;
     });
 
-    // After 2 attempts (including mixed ones), allow students to
-    // move to the next item via the same popup used for fully
-    // incorrect attempts.
-    if (!(widget.isTeacher ?? false) && _incorrectAttempts == 2) {
-      _showNextItemPopup();
+    if (!(widget.isTeacher ?? false) && _incorrectAttempts >= 2) {
+      if (!_completedItems.contains(_currentIndex) &&
+          !_failedItems.contains(_currentIndex)) {
+        _markCurrentItemAsIncorrect();
+      }
+      return;
     }
 
     // Clear previous timer if exists
@@ -1865,6 +1868,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       _completedItems.add(_currentIndex);
       _score += 1;
       _showIncorrectFeedback = false;
+      _incorrectAttempts = 0;
     });
 
     // Show brief correct feedback then auto-proceed
@@ -3099,7 +3103,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                                       ? 'Completed! '
                                       : (_isListening
                                           ? 'Listening... Tap to stop'
-                                          : (_incorrectAttempts >= 3
+                                          : (_incorrectAttempts >= 1
                                               ? 'Try again! You can do it! '
                                               : 'Practice Now! ')),
                                   fontSize: 24.0,
