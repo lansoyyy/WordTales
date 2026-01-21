@@ -104,6 +104,78 @@ class _PracticeScreenState extends State<PracticeScreen>
   String? _currentRecordingPath;
   bool _isRecording = false;
 
+  bool _isLevel5SentenceSessionActive = false;
+  DateTime? _level5SentenceSessionStartedAt;
+  String _level5SentenceAccumulatedText = '';
+  bool _isRestartingLevel5SentenceListening = false;
+
+  String _mergeSentenceText(String a, String b) {
+    final aa = a.trim();
+    final bb = b.trim();
+    if (aa.isEmpty) return bb;
+    if (bb.isEmpty) return aa;
+    if (bb.startsWith(aa)) return bb;
+    if (aa.startsWith(bb)) return aa;
+    return ('$aa $bb').replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  Future<void> _restartListeningForLevel5SentenceIfNeeded() async {
+    if (!_isLevel5SentenceSessionActive) return;
+    if (_isRestartingLevel5SentenceListening) return;
+
+    final startedAt = _level5SentenceSessionStartedAt;
+    if (startedAt == null) return;
+    if (DateTime.now().difference(startedAt) > const Duration(seconds: 180)) {
+      return;
+    }
+
+    _isRestartingLevel5SentenceListening = true;
+    try {
+      await _initSpeech();
+      if (!_speechAvailable) return;
+
+      try {
+        await _speech.cancel();
+      } catch (_) {}
+
+      await Future.delayed(const Duration(milliseconds: 250));
+      if (!mounted || !_isLevel5SentenceSessionActive) return;
+
+      _lastSpeechHeardAt = DateTime.now();
+
+      await _speech.listen(
+        onResult: _onSpeechResult,
+        partialResults: true,
+        listenMode: stt.ListenMode.dictation,
+        listenFor: const Duration(seconds: 120),
+        pauseFor: const Duration(seconds: 12),
+        localeId: _selectedLocaleId,
+        onSoundLevelChange: (level) {
+          if (!mounted) return;
+          if (level > 0.5) {
+            _lastSpeechHeardAt = DateTime.now();
+          }
+          if (_isListening && level > 0.5) {
+            setState(() {
+              _soundLevel = level;
+            });
+          }
+        },
+      );
+
+      await Future.delayed(const Duration(milliseconds: 350));
+      if (!mounted || !_isLevel5SentenceSessionActive) return;
+      if (_speech.isListening || _isListening) {
+        setState(() {
+          _isListening = true;
+        });
+        _startListeningWatchdog();
+      }
+    } finally {
+      _isRestartingLevel5SentenceListening = false;
+    }
+  }
+
   Future<void> _uploadAndSaveRecording(
     String recordingPath,
     int itemIndex,
@@ -482,27 +554,25 @@ class _PracticeScreenState extends State<PracticeScreen>
     await _practiceItemsSubscription?.cancel();
     _practiceItemsSubscription = _practiceItemService
         .streamCustomPracticeItems(
-          level: widget.level!,
-          teacherId: teacherId,
-        )
+      level: widget.level!,
+      teacherId: teacherId,
+    )
         .listen((items) {
       if (!mounted) return;
 
-      final formatted = items
-          .map((item) {
-            final String type = (item['type'] ?? 'Word').toString();
-            final String content = (item['content'] ?? '').toString();
-            final String emojiRaw = (item['emoji'] ?? '').toString();
-            final String emoji = emojiRaw.trim().isNotEmpty
-                ? emojiRaw
-                : _getEmojiForPracticeItem(type: type, content: content);
-            return {
-              'type': type,
-              'content': content,
-              'emoji': emoji,
-            };
-          })
-          .toList();
+      final formatted = items.map((item) {
+        final String type = (item['type'] ?? 'Word').toString();
+        final String content = (item['content'] ?? '').toString();
+        final String emojiRaw = (item['emoji'] ?? '').toString();
+        final String emoji = emojiRaw.trim().isNotEmpty
+            ? emojiRaw
+            : _getEmojiForPracticeItem(type: type, content: content);
+        return {
+          'type': type,
+          'content': content,
+          'emoji': emoji,
+        };
+      }).toList();
 
       setState(() {
         practiceItems = formatted.isNotEmpty ? formatted : defaultItems;
@@ -514,7 +584,8 @@ class _PracticeScreenState extends State<PracticeScreen>
     });
   }
 
-  String _getEmojiForPracticeItem({required String type, required String content}) {
+  String _getEmojiForPracticeItem(
+      {required String type, required String content}) {
     final String normalized = content.trim();
     if (type == 'Word' && normalized.length == 1) {
       return _getEmojiForLetter(normalized);
@@ -951,7 +1022,17 @@ class _PracticeScreenState extends State<PracticeScreen>
         return;
       }
 
-      if (DateTime.now().difference(last) > const Duration(seconds: 3)) {
+      final bool isLevel5SentenceSession =
+          _isLevel5SentenceSessionActive && widget.level == 5;
+      final Duration allowedSilence = isLevel5SentenceSession
+          ? const Duration(seconds: 15)
+          : const Duration(seconds: 3);
+
+      if (DateTime.now().difference(last) > allowedSilence) {
+        if (isLevel5SentenceSession) {
+          return;
+        }
+
         // Restart faster - don't wait 6 seconds
         timer.cancel();
         // Don't auto-restart - let user manually click Practice button
@@ -1033,18 +1114,28 @@ class _PracticeScreenState extends State<PracticeScreen>
       _lastSpeechHeardAt = DateTime.now();
 
       final type = practiceItems[_currentIndex]['type'];
+      final bool isLevel5Sentence = widget.level == 5 && type == 'Sentence';
+      if (isLevel5Sentence) {
+        _isLevel5SentenceSessionActive = true;
+        _level5SentenceSessionStartedAt = DateTime.now();
+        _level5SentenceAccumulatedText = '';
+      }
 
       // Simplified speech listening - no retries, just start once
       await _speech.listen(
         onResult: _onSpeechResult,
         partialResults: true,
         listenMode: stt.ListenMode.dictation,
-        listenFor: type == 'Sentence'
-            ? const Duration(seconds: 30)
-            : const Duration(seconds: 25),
-        pauseFor: type == 'Sentence'
-            ? const Duration(seconds: 5)
-            : const Duration(seconds: 4),
+        listenFor: isLevel5Sentence
+            ? const Duration(seconds: 120)
+            : (type == 'Sentence'
+                ? const Duration(seconds: 30)
+                : const Duration(seconds: 25)),
+        pauseFor: isLevel5Sentence
+            ? const Duration(seconds: 12)
+            : (type == 'Sentence'
+                ? const Duration(seconds: 5)
+                : const Duration(seconds: 4)),
         localeId: _selectedLocaleId,
         onSoundLevelChange: (level) {
           if (!mounted) return;
@@ -1135,6 +1226,9 @@ class _PracticeScreenState extends State<PracticeScreen>
   Future<void> _stopListening() async {
     _listeningWatchdogTimer?.cancel();
     _shouldAutoRestartListening = false;
+    _isLevel5SentenceSessionActive = false;
+    _level5SentenceSessionStartedAt = null;
+    _level5SentenceAccumulatedText = '';
     final int itemIndex = _currentIndex;
     await _speech.stop();
 
@@ -1174,8 +1268,16 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   void _onSpeechResult(SpeechRecognitionResult result) {
     if (!mounted) return;
+    final type = practiceItems[_currentIndex]['type'];
+    final bool isLevel5Sentence = widget.level == 5 && type == 'Sentence';
+
+    final String mergedText = isLevel5Sentence
+        ? _mergeSentenceText(
+            _level5SentenceAccumulatedText, result.recognizedWords)
+        : result.recognizedWords;
+
     setState(() {
-      _recognizedText = result.recognizedWords;
+      _recognizedText = mergedText;
       _confidence = result.confidence;
     });
 
@@ -1184,7 +1286,6 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
 
     final target = practiceItems[_currentIndex]['content']!;
-    final type = practiceItems[_currentIndex]['type'];
 
     // Always update character-by-character feedback for the latest speech
     _generateCharacterFeedback(target, _recognizedText);
@@ -1229,6 +1330,60 @@ class _PracticeScreenState extends State<PracticeScreen>
           !_failedItems.contains(_currentIndex)) {
         _markCurrentItemAsCorrect();
       }
+      return;
+    }
+
+    if (isLevel5Sentence) {
+      if (!result.finalResult) {
+        return;
+      }
+
+      _level5SentenceAccumulatedText = mergedText;
+
+      if (isMatch) {
+        _stopListening();
+        if (!_completedItems.contains(_currentIndex) &&
+            !_failedItems.contains(_currentIndex)) {
+          _markCurrentItemAsCorrect();
+        }
+        return;
+      }
+
+      final startedAt = _level5SentenceSessionStartedAt;
+      if (startedAt != null &&
+          DateTime.now().difference(startedAt) > const Duration(seconds: 180)) {
+        _stopListening();
+        if (_recognizedText.isNotEmpty &&
+            !_completedItems.contains(_currentIndex) &&
+            !_failedItems.contains(_currentIndex)) {
+          _showIncorrectFeedbackMessage();
+        }
+        return;
+      }
+
+      final int targetWordCount =
+          _normalizeText(target).split(' ').where((w) => w.isNotEmpty).length;
+      final int spokenWordCount = _normalizeText(mergedText)
+          .split(' ')
+          .where((w) => w.isNotEmpty)
+          .length;
+      final bool looksIncomplete = spokenWordCount < targetWordCount;
+
+      if (!looksIncomplete) {
+        _stopListening();
+        if (_recognizedText.isNotEmpty &&
+            !_completedItems.contains(_currentIndex) &&
+            !_failedItems.contains(_currentIndex)) {
+          _showIncorrectFeedbackMessage();
+        }
+        return;
+      }
+
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (!mounted) return;
+        if (!_isLevel5SentenceSessionActive) return;
+        _restartListeningForLevel5SentenceIfNeeded();
+      });
       return;
     }
 
