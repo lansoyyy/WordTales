@@ -109,6 +109,10 @@ class _PracticeScreenState extends State<PracticeScreen>
   String _level5SentenceAccumulatedText = '';
   bool _isRestartingLevel5SentenceListening = false;
 
+  String _normalizedItemType(dynamic raw) {
+    return (raw ?? '').toString().trim().toLowerCase();
+  }
+
   String _mergeSentenceText(String a, String b) {
     final aa = a.trim();
     final bb = b.trim();
@@ -125,7 +129,7 @@ class _PracticeScreenState extends State<PracticeScreen>
 
     final startedAt = _level5SentenceSessionStartedAt;
     if (startedAt == null) return;
-    if (DateTime.now().difference(startedAt) > const Duration(seconds: 180)) {
+    if (DateTime.now().difference(startedAt) > const Duration(seconds: 300)) {
       return;
     }
 
@@ -147,8 +151,8 @@ class _PracticeScreenState extends State<PracticeScreen>
         onResult: _onSpeechResult,
         partialResults: true,
         listenMode: stt.ListenMode.dictation,
-        listenFor: const Duration(seconds: 120),
-        pauseFor: const Duration(seconds: 12),
+        listenFor: const Duration(seconds: 180),
+        pauseFor: const Duration(seconds: 30),
         localeId: _selectedLocaleId,
         onSoundLevelChange: (level) {
           if (!mounted) return;
@@ -163,14 +167,11 @@ class _PracticeScreenState extends State<PracticeScreen>
         },
       );
 
-      await Future.delayed(const Duration(milliseconds: 350));
       if (!mounted || !_isLevel5SentenceSessionActive) return;
-      if (_speech.isListening || _isListening) {
-        setState(() {
-          _isListening = true;
-        });
-        _startListeningWatchdog();
-      }
+      setState(() {
+        _isListening = true;
+      });
+      _startListeningWatchdog();
     } finally {
       _isRestartingLevel5SentenceListening = false;
     }
@@ -915,7 +916,7 @@ class _PracticeScreenState extends State<PracticeScreen>
             _hasSpeechError = true;
           });
         },
-        finalTimeout: const Duration(seconds: 10),
+        finalTimeout: const Duration(seconds: 30),
       );
 
       if (!mounted) return;
@@ -996,10 +997,22 @@ class _PracticeScreenState extends State<PracticeScreen>
         _soundLevel = 0.0;
       }
     });
+
+    if (status == 'listening') {
+      _startListeningWatchdog();
+    }
     if (stopped) {
       _listeningWatchdogTimer?.cancel();
       // Don't auto-restart listening - let user manually click Practice button
       _shouldAutoRestartListening = false;
+
+      if (_isLevel5SentenceSessionActive && widget.level == 5) {
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (!mounted) return;
+          if (!_isLevel5SentenceSessionActive) return;
+          _restartListeningForLevel5SentenceIfNeeded();
+        });
+      }
     }
   }
 
@@ -1113,8 +1126,8 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       _lastSpeechHeardAt = DateTime.now();
 
-      final type = practiceItems[_currentIndex]['type'];
-      final bool isLevel5Sentence = widget.level == 5 && type == 'Sentence';
+      final type = _normalizedItemType(practiceItems[_currentIndex]['type']);
+      final bool isLevel5Sentence = widget.level == 5 && type == 'sentence';
       if (isLevel5Sentence) {
         _isLevel5SentenceSessionActive = true;
         _level5SentenceSessionStartedAt = DateTime.now();
@@ -1127,13 +1140,13 @@ class _PracticeScreenState extends State<PracticeScreen>
         partialResults: true,
         listenMode: stt.ListenMode.dictation,
         listenFor: isLevel5Sentence
-            ? const Duration(seconds: 120)
-            : (type == 'Sentence'
+            ? const Duration(seconds: 180)
+            : (type == 'sentence'
                 ? const Duration(seconds: 30)
                 : const Duration(seconds: 25)),
         pauseFor: isLevel5Sentence
-            ? const Duration(seconds: 12)
-            : (type == 'Sentence'
+            ? const Duration(seconds: 30)
+            : (type == 'sentence'
                 ? const Duration(seconds: 5)
                 : const Duration(seconds: 4)),
         localeId: _selectedLocaleId,
@@ -1268,8 +1281,8 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   void _onSpeechResult(SpeechRecognitionResult result) {
     if (!mounted) return;
-    final type = practiceItems[_currentIndex]['type'];
-    final bool isLevel5Sentence = widget.level == 5 && type == 'Sentence';
+    final type = _normalizedItemType(practiceItems[_currentIndex]['type']);
+    final bool isLevel5Sentence = widget.level == 5 && type == 'sentence';
 
     final String mergedText = isLevel5Sentence
         ? _mergeSentenceText(
@@ -1299,11 +1312,11 @@ class _PracticeScreenState extends State<PracticeScreen>
     // are not counted as correct, even if the similarity function is
     // generous.
     bool isMatch = baseMatch;
-    if (type == 'Sentence') {
+    if (type == 'sentence') {
       // For sentences, trust the similarity + word-overlap check.
       // Character-perfect accuracy is too strict and leads to false negatives.
       isMatch = baseMatch;
-    } else if (type == 'Word') {
+    } else if (type == 'word') {
       // For multi-letter words, require reasonable character accuracy.
       // BUT if baseMatch (sophisticated check) already passed, trust it!
       // The accuracy check is prone to failure on short words due to alignment issues
@@ -1324,7 +1337,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
 
     // For single-word items, allow early acceptance even on partial results
-    if (type == 'Word' && isMatch) {
+    if (type == 'word' && isMatch) {
       _stopListening();
       if (!_completedItems.contains(_currentIndex) &&
           !_failedItems.contains(_currentIndex)) {
@@ -1351,25 +1364,7 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       final startedAt = _level5SentenceSessionStartedAt;
       if (startedAt != null &&
-          DateTime.now().difference(startedAt) > const Duration(seconds: 180)) {
-        _stopListening();
-        if (_recognizedText.isNotEmpty &&
-            !_completedItems.contains(_currentIndex) &&
-            !_failedItems.contains(_currentIndex)) {
-          _showIncorrectFeedbackMessage();
-        }
-        return;
-      }
-
-      final int targetWordCount =
-          _normalizeText(target).split(' ').where((w) => w.isNotEmpty).length;
-      final int spokenWordCount = _normalizeText(mergedText)
-          .split(' ')
-          .where((w) => w.isNotEmpty)
-          .length;
-      final bool looksIncomplete = spokenWordCount < targetWordCount;
-
-      if (!looksIncomplete) {
+          DateTime.now().difference(startedAt) > const Duration(seconds: 300)) {
         _stopListening();
         if (_recognizedText.isNotEmpty &&
             !_completedItems.contains(_currentIndex) &&
@@ -1409,12 +1404,14 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   void _generateCharacterFeedback(String target, String spoken) {
-    final type = practiceItems[_currentIndex]['type'];
+    final type = _normalizedItemType(practiceItems[_currentIndex]['type']);
 
     // For sentences, provide feedback at the word level so that only the
     // misread words are highlighted (e.g., only "eat" turns red in
     // "I eat my food" when that word is mispronounced).
-    if (type == 'Sentence') {
+    if (type == 'sentence') {
+      final bool isLevel5SentenceSession =
+          widget.level == 5 && _isLevel5SentenceSessionActive;
       final targetWords = target.toUpperCase().trim().split(RegExp(r'\s+'));
       final spokenWords = spoken.toUpperCase().trim().split(RegExp(r'\s+'));
 
@@ -1432,7 +1429,7 @@ class _PracticeScreenState extends State<PracticeScreen>
           if (spokenWord == targetWord) {
             feedback.add('correct');
           } else {
-            feedback.add('incorrect');
+            feedback.add(isLevel5SentenceSession ? 'missing' : 'incorrect');
           }
         } else {
           feedback.add('missing');
@@ -2496,6 +2493,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       return _buildMicPermissionGate();
     }
     final currentItem = practiceItems[_currentIndex];
+    final String currentItemType = _normalizedItemType(currentItem['type']);
     final isCurrentItemCompleted = _completedItems.contains(_currentIndex);
     final bool isTeacherMode = widget.isTeacher ?? false;
     final bool canGoNext = isTeacherMode ||
@@ -2793,7 +2791,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                                         align: TextAlign.center,
                                         fontFamily: 'Regular',
                                       )
-                                    else if (currentItem['type'] == 'Sentence')
+                                    else if (currentItemType == 'sentence')
                                       Wrap(
                                         alignment: WrapAlignment.center,
                                         runSpacing: 4.0,
