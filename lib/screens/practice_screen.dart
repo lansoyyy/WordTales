@@ -104,14 +104,23 @@ class _PracticeScreenState extends State<PracticeScreen>
   String? _currentRecordingPath;
   bool _isRecording = false;
 
+  // Level 5 Sentence Session State
   bool _isLevel5SentenceSessionActive = false;
   DateTime? _level5SentenceSessionStartedAt;
   String _level5SentenceAccumulatedText = '';
   bool _isRestartingLevel5SentenceListening = false;
+  Timer? _level5SentenceFinalizeTimer;
+  bool _isFinalizingLevel5SentenceAttempt = false;
 
-  String _normalizedItemType(dynamic raw) {
-    return (raw ?? '').toString().trim().toLowerCase();
-  }
+  // Level 5 Sentence Session Constants (generous durations for slow speakers)
+  static const Duration _level5ListenFor =
+      Duration(seconds: 300); // 5 minutes max per listen
+  static const Duration _level5PauseFor =
+      Duration(seconds: 30); // 30 second pause tolerance
+  static const Duration _level5MaxSession =
+      Duration(seconds: 420); // 7 minutes total session
+  static const Duration _level5FinalizeSilence =
+      Duration(seconds: 25); // Finalize after 25s true silence
 
   String _mergeSentenceText(String a, String b) {
     final aa = a.trim();
@@ -126,10 +135,13 @@ class _PracticeScreenState extends State<PracticeScreen>
   Future<void> _restartListeningForLevel5SentenceIfNeeded() async {
     if (!_isLevel5SentenceSessionActive) return;
     if (_isRestartingLevel5SentenceListening) return;
+    if (_isFinalizingLevel5SentenceAttempt) return;
 
     final startedAt = _level5SentenceSessionStartedAt;
     if (startedAt == null) return;
-    if (DateTime.now().difference(startedAt) > const Duration(seconds: 300)) {
+    if (DateTime.now().difference(startedAt) > _level5MaxSession) {
+      // Session exceeded max time, finalize as incorrect
+      await _finalizeLevel5SentenceAttempt(isCorrect: false);
       return;
     }
 
@@ -151,8 +163,8 @@ class _PracticeScreenState extends State<PracticeScreen>
         onResult: _onSpeechResult,
         partialResults: true,
         listenMode: stt.ListenMode.dictation,
-        listenFor: const Duration(seconds: 180),
-        pauseFor: const Duration(seconds: 30),
+        listenFor: _level5ListenFor,
+        pauseFor: _level5PauseFor,
         localeId: _selectedLocaleId,
         onSoundLevelChange: (level) {
           if (!mounted) return;
@@ -167,13 +179,89 @@ class _PracticeScreenState extends State<PracticeScreen>
         },
       );
 
+      await Future.delayed(const Duration(milliseconds: 350));
       if (!mounted || !_isLevel5SentenceSessionActive) return;
-      setState(() {
-        _isListening = true;
-      });
-      _startListeningWatchdog();
+      if (_speech.isListening || _isListening) {
+        setState(() {
+          _isListening = true;
+        });
+        _startListeningWatchdog();
+      }
     } finally {
       _isRestartingLevel5SentenceListening = false;
+    }
+  }
+
+  void _scheduleLevel5SentenceFinalizeCheck() {
+    _level5SentenceFinalizeTimer?.cancel();
+    _level5SentenceFinalizeTimer =
+        Timer(_level5FinalizeSilence, _maybeFinalizeLevel5SentenceAfterSilence);
+  }
+
+  Future<void> _maybeFinalizeLevel5SentenceAfterSilence() async {
+    if (!mounted) return;
+    if (_isFinalizingLevel5SentenceAttempt) return;
+    if (!_isLevel5SentenceSessionActive) return;
+
+    final startedAt = _level5SentenceSessionStartedAt;
+    if (startedAt == null) return;
+
+    // Check max session timeout
+    if (DateTime.now().difference(startedAt) > _level5MaxSession) {
+      await _finalizeLevel5SentenceAttempt(isCorrect: false);
+      return;
+    }
+
+    // If still listening, don't finalize yet
+    if (_isListening) {
+      return;
+    }
+
+    // Check if enough silence has passed since last speech
+    final last = _lastSpeechHeardAt;
+    if (last != null &&
+        DateTime.now().difference(last) < _level5FinalizeSilence) {
+      return;
+    }
+
+    // Only finalize if we have some recognized text
+    if (_recognizedText.trim().isEmpty) {
+      return;
+    }
+
+    // Check if the sentence matches
+    final target = practiceItems[_currentIndex]['content']!;
+    final bool isMatch = _matchesTarget(target, _recognizedText);
+    await _finalizeLevel5SentenceAttempt(isCorrect: isMatch);
+  }
+
+  Future<void> _finalizeLevel5SentenceAttempt({required bool isCorrect}) async {
+    if (_isFinalizingLevel5SentenceAttempt) return;
+    if (!_isLevel5SentenceSessionActive) return;
+    _isFinalizingLevel5SentenceAttempt = true;
+    try {
+      _level5SentenceFinalizeTimer?.cancel();
+
+      // Generate feedback only at finalization time
+      final target = practiceItems[_currentIndex]['content']!;
+      _generateCharacterFeedback(target, _recognizedText);
+
+      await _stopListening();
+
+      if (_completedItems.contains(_currentIndex) ||
+          _failedItems.contains(_currentIndex)) {
+        return;
+      }
+
+      if (isCorrect) {
+        _markCurrentItemAsCorrect();
+      } else {
+        if (_recognizedText.trim().isNotEmpty) {
+          _showIncorrectFeedbackMessage();
+        }
+      }
+    } finally {
+      _isFinalizingLevel5SentenceAttempt = false;
     }
   }
 
@@ -916,7 +1004,7 @@ class _PracticeScreenState extends State<PracticeScreen>
             _hasSpeechError = true;
           });
         },
-        finalTimeout: const Duration(seconds: 30),
+        finalTimeout: const Duration(seconds: 10),
       );
 
       if (!mounted) return;
@@ -997,21 +1085,17 @@ class _PracticeScreenState extends State<PracticeScreen>
         _soundLevel = 0.0;
       }
     });
-
-    if (status == 'listening') {
-      _startListeningWatchdog();
-    }
     if (stopped) {
       _listeningWatchdogTimer?.cancel();
       // Don't auto-restart listening - let user manually click Practice button
       _shouldAutoRestartListening = false;
 
-      if (_isLevel5SentenceSessionActive && widget.level == 5) {
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (!mounted) return;
-          if (!_isLevel5SentenceSessionActive) return;
-          _restartListeningForLevel5SentenceIfNeeded();
-        });
+      // For Level 5 sentences, when STT stops (due to pause), schedule a finalize check
+      // This allows the session to continue if the child hasn't finished speaking
+      if (_isLevel5SentenceSessionActive &&
+          !_isFinalizingLevel5SentenceAttempt &&
+          _recognizedText.trim().isNotEmpty) {
+        _scheduleLevel5SentenceFinalizeCheck();
       }
     }
   }
@@ -1116,6 +1200,9 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       if (!mounted) return;
 
+      // Cancel any pending finalize timer when starting new listening
+      _level5SentenceFinalizeTimer?.cancel();
+
       setState(() {
         _recognizedText = '';
         _confidence = 0.0;
@@ -1126,12 +1213,13 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       _lastSpeechHeardAt = DateTime.now();
 
-      final type = _normalizedItemType(practiceItems[_currentIndex]['type']);
-      final bool isLevel5Sentence = widget.level == 5 && type == 'sentence';
+      final type = practiceItems[_currentIndex]['type'];
+      final bool isLevel5Sentence = widget.level == 5 && type == 'Sentence';
       if (isLevel5Sentence) {
         _isLevel5SentenceSessionActive = true;
         _level5SentenceSessionStartedAt = DateTime.now();
         _level5SentenceAccumulatedText = '';
+        _isFinalizingLevel5SentenceAttempt = false;
       }
 
       // Simplified speech listening - no retries, just start once
@@ -1140,13 +1228,13 @@ class _PracticeScreenState extends State<PracticeScreen>
         partialResults: true,
         listenMode: stt.ListenMode.dictation,
         listenFor: isLevel5Sentence
-            ? const Duration(seconds: 180)
-            : (type == 'sentence'
+            ? _level5ListenFor
+            : (type == 'Sentence'
                 ? const Duration(seconds: 30)
                 : const Duration(seconds: 25)),
         pauseFor: isLevel5Sentence
-            ? const Duration(seconds: 30)
-            : (type == 'sentence'
+            ? _level5PauseFor
+            : (type == 'Sentence'
                 ? const Duration(seconds: 5)
                 : const Duration(seconds: 4)),
         localeId: _selectedLocaleId,
@@ -1238,6 +1326,7 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   Future<void> _stopListening() async {
     _listeningWatchdogTimer?.cancel();
+    _level5SentenceFinalizeTimer?.cancel();
     _shouldAutoRestartListening = false;
     _isLevel5SentenceSessionActive = false;
     _level5SentenceSessionStartedAt = null;
@@ -1279,10 +1368,10 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
   }
 
-  void _onSpeechResult(SpeechRecognitionResult result) {
+  Future<void> _onSpeechResult(SpeechRecognitionResult result) async {
     if (!mounted) return;
-    final type = _normalizedItemType(practiceItems[_currentIndex]['type']);
-    final bool isLevel5Sentence = widget.level == 5 && type == 'sentence';
+    final type = practiceItems[_currentIndex]['type'];
+    final bool isLevel5Sentence = widget.level == 5 && type == 'Sentence';
 
     final String mergedText = isLevel5Sentence
         ? _mergeSentenceText(
@@ -1312,11 +1401,11 @@ class _PracticeScreenState extends State<PracticeScreen>
     // are not counted as correct, even if the similarity function is
     // generous.
     bool isMatch = baseMatch;
-    if (type == 'sentence') {
+    if (type == 'Sentence') {
       // For sentences, trust the similarity + word-overlap check.
       // Character-perfect accuracy is too strict and leads to false negatives.
       isMatch = baseMatch;
-    } else if (type == 'word') {
+    } else if (type == 'Word') {
       // For multi-letter words, require reasonable character accuracy.
       // BUT if baseMatch (sophisticated check) already passed, trust it!
       // The accuracy check is prone to failure on short words due to alignment issues
@@ -1337,7 +1426,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
 
     // For single-word items, allow early acceptance even on partial results
-    if (type == 'word' && isMatch) {
+    if (type == 'Word' && isMatch) {
       _stopListening();
       if (!_completedItems.contains(_currentIndex) &&
           !_failedItems.contains(_currentIndex)) {
@@ -1347,6 +1436,8 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
 
     if (isLevel5Sentence) {
+      // For Level 5 sentences: accumulate text but DON'T mark incorrect until
+      // the session truly ends (either by match, max timeout, or user stop)
       if (!result.finalResult) {
         return;
       }
@@ -1354,29 +1445,28 @@ class _PracticeScreenState extends State<PracticeScreen>
       _level5SentenceAccumulatedText = mergedText;
 
       if (isMatch) {
-        _stopListening();
-        if (!_completedItems.contains(_currentIndex) &&
-            !_failedItems.contains(_currentIndex)) {
-          _markCurrentItemAsCorrect();
-        }
+        // Correct! Finalize immediately
+        await _finalizeLevel5SentenceAttempt(isCorrect: true);
         return;
       }
 
+      // Check if max session time exceeded
       final startedAt = _level5SentenceSessionStartedAt;
       if (startedAt != null &&
-          DateTime.now().difference(startedAt) > const Duration(seconds: 300)) {
-        _stopListening();
-        if (_recognizedText.isNotEmpty &&
-            !_completedItems.contains(_currentIndex) &&
-            !_failedItems.contains(_currentIndex)) {
-          _showIncorrectFeedbackMessage();
-        }
+          DateTime.now().difference(startedAt) > _level5MaxSession) {
+        await _finalizeLevel5SentenceAttempt(isCorrect: false);
         return;
       }
 
+      // NOT a match - schedule a finalize check after silence
+      // This gives the child time to continue speaking if they paused
+      _scheduleLevel5SentenceFinalizeCheck();
+
+      // Restart listening to capture more speech
       Future.delayed(const Duration(milliseconds: 300), () {
         if (!mounted) return;
         if (!_isLevel5SentenceSessionActive) return;
+        if (_isFinalizingLevel5SentenceAttempt) return;
         _restartListeningForLevel5SentenceIfNeeded();
       });
       return;
@@ -1404,14 +1494,22 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   void _generateCharacterFeedback(String target, String spoken) {
-    final type = _normalizedItemType(practiceItems[_currentIndex]['type']);
+    final type = practiceItems[_currentIndex]['type'];
+
+    // For Level 5 sentences, don't generate feedback during active session
+    // to prevent the UI from showing red/green while the child is still speaking.
+    // Feedback will be generated only when the session is finalized.
+    if (type == 'Sentence' &&
+        widget.level == 5 &&
+        _isLevel5SentenceSessionActive &&
+        !_isFinalizingLevel5SentenceAttempt) {
+      return;
+    }
 
     // For sentences, provide feedback at the word level so that only the
     // misread words are highlighted (e.g., only "eat" turns red in
     // "I eat my food" when that word is mispronounced).
-    if (type == 'sentence') {
-      final bool isLevel5SentenceSession =
-          widget.level == 5 && _isLevel5SentenceSessionActive;
+    if (type == 'Sentence') {
       final targetWords = target.toUpperCase().trim().split(RegExp(r'\s+'));
       final spokenWords = spoken.toUpperCase().trim().split(RegExp(r'\s+'));
 
@@ -1429,7 +1527,7 @@ class _PracticeScreenState extends State<PracticeScreen>
           if (spokenWord == targetWord) {
             feedback.add('correct');
           } else {
-            feedback.add(isLevel5SentenceSession ? 'missing' : 'incorrect');
+            feedback.add('incorrect');
           }
         } else {
           feedback.add('missing');
@@ -1927,6 +2025,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     _celebrationController.dispose();
     _incorrectFeedbackTimer?.cancel();
     _listeningWatchdogTimer?.cancel();
+    _level5SentenceFinalizeTimer?.cancel();
     _practiceItemsSubscription?.cancel();
     _flutterTts.stop();
     if (_isListening) {
@@ -1939,6 +2038,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     // Always stop/reset speech service to ensure it's ready for next item
     // This is important after speech errors where _isListening may be false but service needs reset
     _listeningWatchdogTimer?.cancel();
+    _level5SentenceFinalizeTimer?.cancel();
     _shouldAutoRestartListening = false;
     if (_isListening || _isRecording) {
       await _stopListening();
@@ -2103,6 +2203,7 @@ class _PracticeScreenState extends State<PracticeScreen>
   // Proceed to next item without marking current as failed
   Future<void> _proceedToNextItem() async {
     _listeningWatchdogTimer?.cancel();
+    _level5SentenceFinalizeTimer?.cancel();
     _shouldAutoRestartListening = false;
     if (_isListening || _isRecording) {
       await _stopListening();
@@ -2493,7 +2594,6 @@ class _PracticeScreenState extends State<PracticeScreen>
       return _buildMicPermissionGate();
     }
     final currentItem = practiceItems[_currentIndex];
-    final String currentItemType = _normalizedItemType(currentItem['type']);
     final isCurrentItemCompleted = _completedItems.contains(_currentIndex);
     final bool isTeacherMode = widget.isTeacher ?? false;
     final bool canGoNext = isTeacherMode ||
@@ -2791,7 +2891,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                                         align: TextAlign.center,
                                         fontFamily: 'Regular',
                                       )
-                                    else if (currentItemType == 'sentence')
+                                    else if (currentItem['type'] == 'Sentence')
                                       Wrap(
                                         alignment: WrapAlignment.center,
                                         runSpacing: 4.0,
