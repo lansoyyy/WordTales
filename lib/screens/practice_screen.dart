@@ -110,17 +110,23 @@ class _PracticeScreenState extends State<PracticeScreen>
   String _level5SentenceAccumulatedText = '';
   bool _isRestartingLevel5SentenceListening = false;
   Timer? _level5SentenceFinalizeTimer;
+  Timer? _level5SentenceRestartTimer;
   bool _isFinalizingLevel5SentenceAttempt = false;
+  bool _isCancellingForRestart =
+      false; // flag to ignore status("done") from cancel
 
-  // Level 5 Sentence Session Constants (generous durations for slow speakers)
-  static const Duration _level5ListenFor =
-      Duration(seconds: 300); // 5 minutes max per listen
-  static const Duration _level5PauseFor =
-      Duration(seconds: 30); // 30 second pause tolerance
+  // Level 5 Sentence Session Constants
+  // NOTE: Android hard-caps listenFor (~60s) and pauseFor (~3-5s) regardless
+  // of what we pass. We set generous values but the REAL mechanism for tolerating
+  // slow speech is the automatic restart loop: when Android stops STT (due to its
+  // own short pause timeout), we immediately restart and keep accumulating text.
+  static const Duration _level5ListenFor = Duration(seconds: 60);
+  static const Duration _level5PauseFor = Duration(seconds: 10);
   static const Duration _level5MaxSession =
-      Duration(seconds: 420); // 7 minutes total session
+      Duration(seconds: 300); // 5 min total
   static const Duration _level5FinalizeSilence =
-      Duration(seconds: 25); // Finalize after 25s true silence
+      Duration(seconds: 20); // finalize after 20s silence
+  static const Duration _level5RestartDelay = Duration(milliseconds: 400);
 
   String _mergeSentenceText(String a, String b) {
     final aa = a.trim();
@@ -132,6 +138,18 @@ class _PracticeScreenState extends State<PracticeScreen>
     return ('$aa $bb').replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
+  /// Schedules a debounced restart of STT for Level 5 sentences.
+  /// Uses a timer to avoid rapid-fire restarts from multiple triggers.
+  void _scheduleLevel5Restart() {
+    if (!_isLevel5SentenceSessionActive) return;
+    if (_isFinalizingLevel5SentenceAttempt) return;
+    _level5SentenceRestartTimer?.cancel();
+    _level5SentenceRestartTimer = Timer(_level5RestartDelay, () {
+      if (!mounted) return;
+      _restartListeningForLevel5SentenceIfNeeded();
+    });
+  }
+
   Future<void> _restartListeningForLevel5SentenceIfNeeded() async {
     if (!_isLevel5SentenceSessionActive) return;
     if (_isRestartingLevel5SentenceListening) return;
@@ -140,22 +158,32 @@ class _PracticeScreenState extends State<PracticeScreen>
     final startedAt = _level5SentenceSessionStartedAt;
     if (startedAt == null) return;
     if (DateTime.now().difference(startedAt) > _level5MaxSession) {
-      // Session exceeded max time, finalize as incorrect
+      debugPrint('[L5] Max session time exceeded, finalizing as incorrect');
       await _finalizeLevel5SentenceAttempt(isCorrect: false);
       return;
     }
 
     _isRestartingLevel5SentenceListening = true;
+    debugPrint(
+        '[L5] Restarting STT listening (accumulated: "${_level5SentenceAccumulatedText}")');
     try {
       await _initSpeech();
-      if (!_speechAvailable) return;
+      if (!_speechAvailable) {
+        debugPrint('[L5] Speech not available for restart');
+        return;
+      }
 
+      // Set flag so _onSpeechStatus("done") from cancel is ignored
+      _isCancellingForRestart = true;
       try {
         await _speech.cancel();
       } catch (_) {}
+      // Small delay to let Android release the mic
+      await Future.delayed(const Duration(milliseconds: 500));
+      _isCancellingForRestart = false;
 
-      await Future.delayed(const Duration(milliseconds: 250));
       if (!mounted || !_isLevel5SentenceSessionActive) return;
+      if (_isFinalizingLevel5SentenceAttempt) return;
 
       _lastSpeechHeardAt = DateTime.now();
 
@@ -179,16 +207,46 @@ class _PracticeScreenState extends State<PracticeScreen>
         },
       );
 
-      await Future.delayed(const Duration(milliseconds: 350));
+      // Give Android time to actually start
+      await Future.delayed(const Duration(milliseconds: 600));
       if (!mounted || !_isLevel5SentenceSessionActive) return;
-      if (_speech.isListening || _isListening) {
-        setState(() {
-          _isListening = true;
+
+      final bool didStart = _speech.isListening;
+      debugPrint('[L5] Restart result: listening=$didStart');
+      if (didStart) {
+        if (mounted) {
+          setState(() {
+            _isListening = true;
+          });
+        }
+        // Cancel finalize timer since we're listening again
+        _level5SentenceFinalizeTimer?.cancel();
+      } else {
+        debugPrint('[L5] Restart failed, scheduling another attempt');
+        // Restart failed - try again after a delay
+        if (_isLevel5SentenceSessionActive &&
+            !_isFinalizingLevel5SentenceAttempt) {
+          _level5SentenceRestartTimer?.cancel();
+          _level5SentenceRestartTimer = Timer(const Duration(seconds: 2), () {
+            if (!mounted) return;
+            _restartListeningForLevel5SentenceIfNeeded();
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[L5] Error during restart: $e');
+      // Schedule retry
+      if (_isLevel5SentenceSessionActive &&
+          !_isFinalizingLevel5SentenceAttempt) {
+        _level5SentenceRestartTimer?.cancel();
+        _level5SentenceRestartTimer = Timer(const Duration(seconds: 2), () {
+          if (!mounted) return;
+          _restartListeningForLevel5SentenceIfNeeded();
         });
-        _startListeningWatchdog();
       }
     } finally {
       _isRestartingLevel5SentenceListening = false;
+      _isCancellingForRestart = false;
     }
   }
 
@@ -208,12 +266,16 @@ class _PracticeScreenState extends State<PracticeScreen>
 
     // Check max session timeout
     if (DateTime.now().difference(startedAt) > _level5MaxSession) {
+      debugPrint('[L5] Finalize check: max session timeout reached');
       await _finalizeLevel5SentenceAttempt(isCorrect: false);
       return;
     }
 
-    // If still listening, don't finalize yet
-    if (_isListening) {
+    // If currently listening or restart in progress, DON'T finalize - reschedule
+    if (_isListening || _isRestartingLevel5SentenceListening) {
+      debugPrint(
+          '[L5] Finalize check: still listening or restarting, rescheduling');
+      _scheduleLevel5SentenceFinalizeCheck();
       return;
     }
 
@@ -221,17 +283,30 @@ class _PracticeScreenState extends State<PracticeScreen>
     final last = _lastSpeechHeardAt;
     if (last != null &&
         DateTime.now().difference(last) < _level5FinalizeSilence) {
+      debugPrint(
+          '[L5] Finalize check: not enough silence yet (${DateTime.now().difference(last).inSeconds}s < ${_level5FinalizeSilence.inSeconds}s), rescheduling');
+      // Reschedule for the remaining time
+      final remaining =
+          _level5FinalizeSilence - DateTime.now().difference(last);
+      _level5SentenceFinalizeTimer?.cancel();
+      _level5SentenceFinalizeTimer = Timer(
+        remaining + const Duration(seconds: 1),
+        _maybeFinalizeLevel5SentenceAfterSilence,
+      );
       return;
     }
 
     // Only finalize if we have some recognized text
     if (_recognizedText.trim().isEmpty) {
+      debugPrint('[L5] Finalize check: no recognized text, not finalizing');
       return;
     }
 
     // Check if the sentence matches
     final target = practiceItems[_currentIndex]['content']!;
     final bool isMatch = _matchesTarget(target, _recognizedText);
+    debugPrint(
+        '[L5] Finalize check: finalizing as ${isMatch ? "correct" : "incorrect"} (text: "$_recognizedText")');
     await _finalizeLevel5SentenceAttempt(isCorrect: isMatch);
   }
 
@@ -1075,26 +1150,40 @@ class _PracticeScreenState extends State<PracticeScreen>
       return;
     }
     final bool stopped = status == 'notListening' || status == 'done';
+
+    // If this "done" is triggered by our own _speech.cancel() during a restart,
+    // ignore it completely - we're about to start listening again.
+    if (stopped && _isCancellingForRestart) {
+      debugPrint('[L5] Ignoring status("$status") from cancel-for-restart');
+      return;
+    }
+
     setState(() {
       if (status == 'listening') {
         _isListening = true;
-        _hasSpeechError = false; // Reset error when speech starts successfully
+        _hasSpeechError = false;
       }
       if (stopped) {
         _isListening = false;
         _soundLevel = 0.0;
       }
     });
+
     if (stopped) {
       _listeningWatchdogTimer?.cancel();
-      // Don't auto-restart listening - let user manually click Practice button
       _shouldAutoRestartListening = false;
 
-      // For Level 5 sentences, when STT stops (due to pause), schedule a finalize check
-      // This allows the session to continue if the child hasn't finished speaking
+      // CRITICAL: For Level 5 sentences, when Android stops STT (due to its
+      // short pause timeout), we must RESTART listening to keep capturing speech.
+      // Also schedule a finalize check as a safety net.
       if (_isLevel5SentenceSessionActive &&
           !_isFinalizingLevel5SentenceAttempt &&
-          _recognizedText.trim().isNotEmpty) {
+          !_isRestartingLevel5SentenceListening) {
+        debugPrint(
+            '[L5] STT stopped (status="$status"), scheduling restart + finalize backup');
+        // Schedule restart (debounced to avoid rapid fire)
+        _scheduleLevel5Restart();
+        // Schedule finalize as backup in case restart keeps failing
         _scheduleLevel5SentenceFinalizeCheck();
       }
     }
@@ -1200,15 +1289,17 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       if (!mounted) return;
 
-      // Cancel any pending finalize timer when starting new listening
+      // Cancel any pending Level 5 timers when starting fresh
       _level5SentenceFinalizeTimer?.cancel();
+      _level5SentenceRestartTimer?.cancel();
+      _isCancellingForRestart = false;
 
       setState(() {
         _recognizedText = '';
         _confidence = 0.0;
         _isListening = false;
         _soundLevel = 0.0;
-        _hasSpeechError = false; // Reset error flag when starting listening
+        _hasSpeechError = false;
       });
 
       _lastSpeechHeardAt = DateTime.now();
@@ -1220,6 +1311,8 @@ class _PracticeScreenState extends State<PracticeScreen>
         _level5SentenceSessionStartedAt = DateTime.now();
         _level5SentenceAccumulatedText = '';
         _isFinalizingLevel5SentenceAttempt = false;
+        _isRestartingLevel5SentenceListening = false;
+        debugPrint('[L5] Starting new Level 5 sentence session');
       }
 
       // Simplified speech listening - no retries, just start once
@@ -1327,10 +1420,12 @@ class _PracticeScreenState extends State<PracticeScreen>
   Future<void> _stopListening() async {
     _listeningWatchdogTimer?.cancel();
     _level5SentenceFinalizeTimer?.cancel();
+    _level5SentenceRestartTimer?.cancel();
     _shouldAutoRestartListening = false;
     _isLevel5SentenceSessionActive = false;
     _level5SentenceSessionStartedAt = null;
     _level5SentenceAccumulatedText = '';
+    _isCancellingForRestart = false;
     final int itemIndex = _currentIndex;
     await _speech.stop();
 
@@ -1437,15 +1532,24 @@ class _PracticeScreenState extends State<PracticeScreen>
 
     if (isLevel5Sentence) {
       // For Level 5 sentences: accumulate text but DON'T mark incorrect until
-      // the session truly ends (either by match, max timeout, or user stop)
+      // the session truly ends (either by match, max timeout, or long silence).
+      // Android's STT stops frequently due to its short pause timeout (~3-5s),
+      // so _onSpeechStatus will automatically restart listening.
+
       if (!result.finalResult) {
+        // Partial result: speech is actively being received.
+        // Cancel any pending finalize timer since the child is still speaking.
+        _level5SentenceFinalizeTimer?.cancel();
+        _level5SentenceRestartTimer?.cancel();
         return;
       }
 
+      // Final result from this STT session segment
       _level5SentenceAccumulatedText = mergedText;
+      debugPrint('[L5] Final result segment: "$mergedText"');
 
       if (isMatch) {
-        // Correct! Finalize immediately
+        debugPrint('[L5] Match found! Finalizing as correct.');
         await _finalizeLevel5SentenceAttempt(isCorrect: true);
         return;
       }
@@ -1454,21 +1558,16 @@ class _PracticeScreenState extends State<PracticeScreen>
       final startedAt = _level5SentenceSessionStartedAt;
       if (startedAt != null &&
           DateTime.now().difference(startedAt) > _level5MaxSession) {
+        debugPrint('[L5] Max session time exceeded in onSpeechResult');
         await _finalizeLevel5SentenceAttempt(isCorrect: false);
         return;
       }
 
-      // NOT a match - schedule a finalize check after silence
-      // This gives the child time to continue speaking if they paused
+      // NOT a match yet — don't mark incorrect. Android will fire
+      // _onSpeechStatus("done") which triggers automatic restart + finalize backup.
+      // Just reset the finalize timer to give the child more time.
+      debugPrint('[L5] Not a match yet, waiting for more speech...');
       _scheduleLevel5SentenceFinalizeCheck();
-
-      // Restart listening to capture more speech
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (!mounted) return;
-        if (!_isLevel5SentenceSessionActive) return;
-        if (_isFinalizingLevel5SentenceAttempt) return;
-        _restartListeningForLevel5SentenceIfNeeded();
-      });
       return;
     }
 
@@ -2026,6 +2125,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     _incorrectFeedbackTimer?.cancel();
     _listeningWatchdogTimer?.cancel();
     _level5SentenceFinalizeTimer?.cancel();
+    _level5SentenceRestartTimer?.cancel();
     _practiceItemsSubscription?.cancel();
     _flutterTts.stop();
     if (_isListening) {
@@ -2039,6 +2139,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     // This is important after speech errors where _isListening may be false but service needs reset
     _listeningWatchdogTimer?.cancel();
     _level5SentenceFinalizeTimer?.cancel();
+    _level5SentenceRestartTimer?.cancel();
     _shouldAutoRestartListening = false;
     if (_isListening || _isRecording) {
       await _stopListening();
@@ -2204,6 +2305,7 @@ class _PracticeScreenState extends State<PracticeScreen>
   Future<void> _proceedToNextItem() async {
     _listeningWatchdogTimer?.cancel();
     _level5SentenceFinalizeTimer?.cancel();
+    _level5SentenceRestartTimer?.cancel();
     _shouldAutoRestartListening = false;
     if (_isListening || _isRecording) {
       await _stopListening();
