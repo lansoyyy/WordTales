@@ -724,7 +724,13 @@ class _PracticeScreenState extends State<PracticeScreen>
         .listen((items) {
       if (!mounted) return;
 
-      final formatted = items.map((item) {
+      // Filter to only active items as a safety net (Firestore query should already do this)
+      final activeItems = items.where((item) {
+        final isActive = item['is_active'];
+        return isActive == null || isActive == true;
+      }).toList();
+
+      final formatted = activeItems.map((item) {
         final String type = (item['type'] ?? 'Word').toString();
         final String content = (item['content'] ?? '').toString();
         final String emojiRaw = (item['emoji'] ?? '').toString();
@@ -740,7 +746,8 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       setState(() {
         practiceItems = formatted.isNotEmpty ? formatted : defaultItems;
-        _totalItems = practiceItems.length;
+        // Ensure _totalItems only counts active items from the stream
+        _totalItems = formatted.isNotEmpty ? formatted.length : defaultItems.length;
         if (_currentIndex >= practiceItems.length) {
           _currentIndex = 0;
         }
@@ -2038,15 +2045,15 @@ class _PracticeScreenState extends State<PracticeScreen>
       // for totalItems. If older saved data has a smaller total (e.g., 5
       // when the level now has 10 items), prefer the actual count so
       // the score denominator is correct.
+      // IMPORTANT: practiceItems should already be filtered to active items only
+      // by the stream listener (see _initializePracticeItems).
       final int actualTotal = practiceItems.length;
       final int storedTotalRaw =
           (levelData['totalItems'] ?? _totalItems) as int;
 
-      int effectiveTotal = storedTotalRaw;
-      if (actualTotal > 0 &&
-          (storedTotalRaw <= 0 || storedTotalRaw != actualTotal)) {
-        effectiveTotal = actualTotal;
-      }
+      // Always prefer the actual total from current practice items
+      // since it reflects the current active item count from Firestore
+      int effectiveTotal = actualTotal > 0 ? actualTotal : storedTotalRaw;
 
       if (!mounted) return;
 
