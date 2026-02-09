@@ -99,6 +99,7 @@ class _PracticeScreenState extends State<PracticeScreen>
   bool _hasListenedCurrentItem = false;
   StreamSubscription<List<Map<String, dynamic>>>? _practiceItemsSubscription;
   bool _hasStartedPracticeSession = false;
+  bool _practiceItemsStreamLoaded = false;
 
   // Audio recording
   String? _currentRecordingPath;
@@ -411,7 +412,8 @@ class _PracticeScreenState extends State<PracticeScreen>
       CurvedAnimation(parent: _celebrationController, curve: Curves.bounceOut),
     );
 
-    _loadExistingProgress();
+    // Note: _loadExistingProgress is now called from the stream listener
+    // after the correct practice item count is loaded from Firestore
     Future.microtask(() async {
       await _ensureMicPermission();
       if (!mounted) return;
@@ -745,13 +747,27 @@ class _PracticeScreenState extends State<PracticeScreen>
       }).toList();
 
       setState(() {
-        practiceItems = formatted.isNotEmpty ? formatted : defaultItems;
-        // Ensure _totalItems only counts active items from the stream
-        _totalItems = formatted.isNotEmpty ? formatted.length : defaultItems.length;
+        // Only use default items if stream hasn't returned data yet (first load)
+        // Once we get data from Firestore (even if empty), use only the active items
+        if (!_practiceItemsStreamLoaded && formatted.isEmpty) {
+          // First load and no Firestore data yet - use defaults
+          practiceItems = defaultItems;
+          _totalItems = defaultItems.length;
+        } else {
+          // Use the Firestore result (filtered active items)
+          practiceItems = formatted;
+          _totalItems = formatted.length;
+        }
+        _practiceItemsStreamLoaded = true;
         if (_currentIndex >= practiceItems.length) {
           _currentIndex = 0;
         }
       });
+      
+      // Now that we have the correct practice items count, load existing progress
+      if (!_isReviewMode) {
+        _loadExistingProgress();
+      }
     });
   }
 
