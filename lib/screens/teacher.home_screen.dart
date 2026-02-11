@@ -5,6 +5,7 @@ import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
 import 'package:word_tales/widgets/audio_player_widget.dart';
 import 'package:word_tales/services/student_service.dart';
+import 'package:word_tales/services/practice_item_service.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:word_tales/utils/words.dart';
 
@@ -51,8 +52,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   ];
 
   final StudentService _studentService = StudentService();
+  final PracticeItemService _practiceItemService = PracticeItemService();
   List<Map<String, dynamic>> _students = [];
   bool _isLoading = false;
+  Map<int, int> _activeItemCounts = {};
 
   Color _getPerformanceColor(double percentage) {
     if (percentage >= 97.0) {
@@ -171,6 +174,28 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
       CurvedAnimation(parent: _animationController, curve: Curves.bounceOut),
     );
     _loadStudents();
+    _loadActiveItemCounts();
+  }
+
+  // Load active practice item counts per level from Firestore
+  Future<void> _loadActiveItemCounts() async {
+    try {
+      final Map<int, int> counts = {};
+      for (int level = 1; level <= 5; level++) {
+        final items = await _practiceItemService.getCustomPracticeItems(
+          level: level,
+          teacherId: widget.teacherId,
+        );
+        counts[level] = items.length;
+      }
+      if (mounted) {
+        setState(() {
+          _activeItemCounts = counts;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading active item counts: $e');
+    }
   }
 
   // Load students from Firebase
@@ -405,6 +430,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   }
 
   int _getExpectedTotalItemsForLevel(int levelNumber) {
+    // Prefer the actual active item count fetched from Firestore
+    if (_activeItemCounts.containsKey(levelNumber) &&
+        _activeItemCounts[levelNumber]! > 0) {
+      return _activeItemCounts[levelNumber]!;
+    }
+    // Fallback to hardcoded defaults only if active counts not loaded yet
     if (levelNumber < 1 || levelNumber > levels.length) {
       return 0;
     }
@@ -413,14 +444,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   }
 
   int _getDisplayTotalItems(dynamic storedTotalItems, int expectedTotalItems) {
-    final int loaded =
-        storedTotalItems is num ? storedTotalItems.toInt() : expectedTotalItems;
-
-    if (expectedTotalItems > 0 && loaded > 0 && loaded < expectedTotalItems) {
+    // If we have the actual active item count from Firestore, always use it
+    // because it reflects the real number of items the student practices.
+    if (expectedTotalItems > 0) {
       return expectedTotalItems;
     }
-
-    return loaded;
+    final int loaded =
+        storedTotalItems is num ? storedTotalItems.toInt() : expectedTotalItems;
+    return loaded > 0 ? loaded : expectedTotalItems;
   }
 
   void exportProgress() {
@@ -1066,7 +1097,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                       borderRadius: BorderRadius.circular(8.0),
                     ),
                     child: TextWidget(
-                      text: '${level['totalItems']} items',
+                      text:
+                          '${_getExpectedTotalItemsForLevel(level['level'] as int)} items',
                       fontSize: 12.0,
                       color: level['color'],
                       isBold: true,
@@ -1441,7 +1473,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                               ),
                               const SizedBox(height: 8.0),
                               TextWidget(
-                                text: '${level['totalItems']} items',
+                                text:
+                                    '${_getExpectedTotalItemsForLevel(level['level'] as int)} items',
                                 fontSize: 12.0,
                                 color: Colors.white.withOpacity(0.8),
                                 fontFamily: 'Regular',
@@ -1534,7 +1567,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                   teacherId: widget.teacherId,
                                 ),
                               ),
-                            );
+                            ).then((_) {
+                              // Refresh active item counts after admin changes
+                              _loadActiveItemCounts();
+                              _loadStudents();
+                            });
                           },
                           icon: IconTheme(
                             data: IconThemeData(color: white),
@@ -1765,8 +1802,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                                   'completed': false,
                                                   'score': 0,
                                                   'totalItems':
-                                                      levels[levelIndex]
-                                                          ['totalItems'],
+                                                      _getExpectedTotalItemsForLevel(
+                                                          levelNumber),
                                                   'date': null,
                                                 },
                                           );
@@ -1823,7 +1860,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                                           height: 4.0),
                                                       TextWidget(
                                                         text:
-                                                            'Score: ${levelData['score']}/${levelData['totalItems']} • ${levelData['date'] ?? 'Unknown'}',
+                                                            'Score: ${levelData['score']}/${_getExpectedTotalItemsForLevel(levelNumber)} • ${levelData['date'] ?? 'Unknown'}',
                                                         fontSize: 14.0,
                                                         color: grey,
                                                       ),

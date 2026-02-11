@@ -269,62 +269,33 @@ class StudentService {
     try {
       if (level != null) {
         // Reset specific level
+        // totalItems is set to 0 so display screens always use the live
+        // active item count from Firestore instead of a stale hardcoded value.
         await _firestore.collection(_studentsCollection).doc(studentId).update({
           'levelProgress.$level': {
             'completed': false,
             'score': 0,
-            'totalItems': level == 1
-                ? 10
-                : level == 2
-                    ? 15
-                    : level == 3
-                        ? 20
-                        : level == 4
-                            ? 25
-                            : 20,
+            'totalItems': 0,
             'date': null,
             'audioRecordings': <String, String>{},
           }
         });
       } else {
         // Reset all levels
+        final resetLevel = {
+          'completed': false,
+          'score': 0,
+          'totalItems': 0,
+          'date': null,
+          'audioRecordings': <String, String>{},
+        };
         await _firestore.collection(_studentsCollection).doc(studentId).update({
           'levelProgress': {
-            '1': {
-              'completed': false,
-              'score': 0,
-              'totalItems': 10,
-              'date': null,
-              'audioRecordings': <String, String>{},
-            },
-            '2': {
-              'completed': false,
-              'score': 0,
-              'totalItems': 15,
-              'date': null,
-              'audioRecordings': <String, String>{},
-            },
-            '3': {
-              'completed': false,
-              'score': 0,
-              'totalItems': 20,
-              'date': null,
-              'audioRecordings': <String, String>{},
-            },
-            '4': {
-              'completed': false,
-              'score': 0,
-              'totalItems': 25,
-              'date': null,
-              'audioRecordings': <String, String>{},
-            },
-            '5': {
-              'completed': false,
-              'score': 0,
-              'totalItems': 20,
-              'date': null,
-              'audioRecordings': <String, String>{},
-            },
+            '1': Map<String, dynamic>.from(resetLevel),
+            '2': Map<String, dynamic>.from(resetLevel),
+            '3': Map<String, dynamic>.from(resetLevel),
+            '4': Map<String, dynamic>.from(resetLevel),
+            '5': Map<String, dynamic>.from(resetLevel),
           },
         });
       }

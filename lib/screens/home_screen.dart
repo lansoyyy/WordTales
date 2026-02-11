@@ -3,6 +3,7 @@ import 'package:word_tales/screens/practice_screen.dart';
 import 'package:word_tales/utils/colors.dart';
 import 'package:word_tales/widgets/text_widget.dart';
 import 'package:word_tales/services/student_service.dart';
+import 'package:word_tales/services/practice_item_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,6 +29,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   String? _studentName;
   String? _teacherId;
   final StudentService _studentService = StudentService();
+  final PracticeItemService _practiceItemService = PracticeItemService();
+  Map<int, int> _activeItemCounts = {};
 
   // Track level completion with scores
   Map<int, Map<String, dynamic>> _levelCompletion = {
@@ -70,6 +73,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  // Load active practice item counts per level from Firestore
+  Future<void> _loadActiveItemCounts(String teacherId) async {
+    try {
+      final Map<int, int> counts = {};
+      for (int level = 1; level <= 5; level++) {
+        final items = await _practiceItemService.getCustomPracticeItems(
+          level: level,
+          teacherId: teacherId,
+        );
+        counts[level] = items.length;
+      }
+      if (mounted) {
+        setState(() {
+          _activeItemCounts = counts;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading active item counts: $e');
+    }
+  }
+
   // Load student information from SharedPreferences
   Future<void> _loadStudentInfo() async {
     try {
@@ -80,6 +104,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final String teacherId =
           prefs.getString('current_teacher_id') ?? 'default_teacher';
 
+      // Fetch active item counts first so they're available for score display
+      await _loadActiveItemCounts(teacherId);
+
       if (studentName != null) {
         final student = await _studentService.getStudentByName(
           name: studentName,
@@ -87,7 +114,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         );
 
         if (mounted && student != null) {
-          final levelProgress = student['levelProgress'] as Map<String, dynamic>?;
+          final levelProgress =
+              student['levelProgress'] as Map<String, dynamic>?;
 
           // Start from defaults and then apply any saved progress
           Map<int, Map<String, dynamic>> updatedLevelCompletion =
@@ -105,23 +133,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               final completed = value['completed'] == true;
               final score = (value['score'] ?? 0) as int;
 
-              // Expected total items for this level based on current app
-              // configuration (e.g., Level 1 now has 10 letters, not 5).
-              final int defaultTotalItems =
-                  (updatedLevelCompletion[levelNumber]?['totalItems'] ?? 0)
-                      as int;
-
-              int loadedTotalItems =
-                  (value['totalItems'] ?? defaultTotalItems) as int;
-
-              // If the stored totalItems is smaller than the expected value
-              // (e.g., old data with 5 when the level now has 10 items),
-              // prefer the expected total so the score denominator is correct.
-              if (defaultTotalItems > 0 &&
-                  loadedTotalItems > 0 &&
-                  loadedTotalItems < defaultTotalItems) {
-                loadedTotalItems = defaultTotalItems;
-              }
+              // Use the actual active item count from Firestore if available,
+              // otherwise fall back to the stored totalItems from the student's
+              // progress data. This ensures the denominator reflects only the
+              // active items the student actually practiced.
+              final int activeCount = _activeItemCounts[levelNumber] ?? 0;
+              final int storedTotal = (value['totalItems'] ?? 0) as int;
+              int loadedTotalItems = activeCount > 0
+                  ? activeCount
+                  : (storedTotal > 0
+                      ? storedTotal
+                      : (updatedLevelCompletion[levelNumber]?['totalItems'] ??
+                          0) as int);
 
               final date = value['date'];
 
@@ -525,8 +548,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                                     level['description'],
                                                 studentId: _studentId,
                                                 studentName: _studentName,
-                                                teacherId:
-                                                    _teacherId ?? 'default_teacher',
+                                                teacherId: _teacherId ??
+                                                    'default_teacher',
                                                 onLevelCompleted: () {
                                                   if (level['level'] ==
                                                       _highestUnlockedLevel) {
