@@ -85,6 +85,7 @@ class _PracticeScreenState extends State<PracticeScreen>
   bool _showIncorrectFeedback = false;
   Timer? _incorrectFeedbackTimer;
   List<String> _characterFeedback = [];
+  Map<int, String> _spokenTextsPerItem = {};
 
   // Speech recognition error tracking
   bool _hasSpeechError = false;
@@ -763,7 +764,7 @@ class _PracticeScreenState extends State<PracticeScreen>
           _currentIndex = 0;
         }
       });
-      
+
       // Now that we have the correct practice items count, load existing progress
       if (!_isReviewMode) {
         _loadExistingProgress();
@@ -1986,6 +1987,8 @@ class _PracticeScreenState extends State<PracticeScreen>
         totalItems: _totalItems,
         completedItems: _completedItems.toList(),
         failedItems: _failedItems.toList(),
+        spokenTexts:
+            _spokenTextsPerItem.map((k, v) => MapEntry(k.toString(), v)),
       );
 
       if (mounted) {
@@ -2239,6 +2242,7 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   // Mark current item as correct - add score and auto-proceed
   void _markCurrentItemAsCorrect() {
+    _spokenTextsPerItem[_currentIndex] = _recognizedText;
     setState(() {
       _failedItems.remove(_currentIndex);
       _completedItems.add(_currentIndex);
@@ -2253,6 +2257,7 @@ class _PracticeScreenState extends State<PracticeScreen>
 
   // Mark current item as incorrect - no score, auto-proceed
   void _markCurrentItemAsIncorrect() {
+    _spokenTextsPerItem[_currentIndex] = _recognizedText;
     setState(() {
       _completedItems.remove(_currentIndex);
       _failedItems.add(_currentIndex);
@@ -3023,7 +3028,7 @@ class _PracticeScreenState extends State<PracticeScreen>
                                         spacing: 4.0,
                                         children: () {
                                           final words = currentItem['content']!
-                                              .split(RegExp(r'\\s+'));
+                                              .split(RegExp(r'\s+'));
                                           return List.generate(words.length,
                                               (index) {
                                             final word = words[index];

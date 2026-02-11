@@ -193,6 +193,7 @@ class StudentService {
     required int totalItems,
     List<int>? completedItems,
     List<int>? failedItems,
+    Map<String, String>? spokenTexts,
   }) async {
     try {
       final updateData = <String, dynamic>{
@@ -209,6 +210,10 @@ class StudentService {
             completedItems ?? <int>[];
         updateData['levelProgress.$level.results.failedItems'] =
             failedItems ?? <int>[];
+      }
+
+      if (spokenTexts != null && spokenTexts.isNotEmpty) {
+        updateData['levelProgress.$level.results.spokenTexts'] = spokenTexts;
       }
 
       await _firestore.collection(_studentsCollection).doc(studentId).update(

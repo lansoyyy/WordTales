@@ -478,6 +478,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
       expectedTotalItems,
     );
 
+    // Extract spoken texts per item for per-word coloring on sentences
+    final Map<String, String> spokenTexts = {};
+
     if (results is Map) {
       final dynamic completed = results['completedItems'];
       final dynamic failed = results['failedItems'];
@@ -487,6 +490,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
       }
       if (failed is List) {
         failedItems.addAll(failed.map<int>((e) => (e as num).toInt()));
+      }
+      final dynamic spoken = results['spokenTexts'];
+      if (spoken is Map) {
+        spoken.forEach((key, value) {
+          if (value is String) {
+            spokenTexts[key.toString()] = value;
+          }
+        });
       }
     }
 
@@ -660,15 +671,101 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                               ),
                               const SizedBox(width: 12.0),
                               Expanded(
-                                child: TextWidget(
-                                  text: item['content'],
-                                  fontSize: 16.0,
-                                  color: isItemFailed
-                                      ? Colors.red
-                                      : isItemCompleted
-                                          ? Colors.green
-                                          : black,
-                                ),
+                                child: () {
+                                  final String content = item['content'] ?? '';
+                                  final String? spokenText =
+                                      spokenTexts['$index'];
+                                  final bool isSentence =
+                                      item['type'] == 'Sentence';
+
+                                  // Per-word coloring for sentences with stored spoken text
+                                  if (isSentence &&
+                                      spokenText != null &&
+                                      spokenText.isNotEmpty &&
+                                      (isItemCompleted || isItemFailed)) {
+                                    final targetWords = content
+                                        .toUpperCase()
+                                        .trim()
+                                        .split(RegExp(r'\s+'));
+                                    final spokenWords = spokenText
+                                        .toUpperCase()
+                                        .trim()
+                                        .split(RegExp(r'\s+'));
+
+                                    return Wrap(
+                                      spacing: 3.0,
+                                      runSpacing: 2.0,
+                                      children: List.generate(
+                                          targetWords.length, (wi) {
+                                        final tWord = targetWords[wi];
+                                        String status;
+                                        if (wi < spokenWords.length) {
+                                          status = spokenWords[wi] == tWord
+                                              ? 'correct'
+                                              : 'incorrect';
+                                        } else {
+                                          status = 'missing';
+                                        }
+
+                                        Color textColor;
+                                        Color bgColor;
+                                        if (status == 'correct') {
+                                          textColor = Colors.green.shade800;
+                                          bgColor =
+                                              Colors.green.withOpacity(0.15);
+                                        } else if (status == 'incorrect') {
+                                          textColor = Colors.red.shade800;
+                                          bgColor =
+                                              Colors.red.withOpacity(0.15);
+                                        } else {
+                                          textColor = grey;
+                                          bgColor =
+                                              Colors.grey.withOpacity(0.1);
+                                        }
+
+                                        // Show original-case word
+                                        final displayWord = wi <
+                                                content
+                                                    .split(RegExp(r'\s+'))
+                                                    .length
+                                            ? content.split(RegExp(r'\s+'))[wi]
+                                            : tWord;
+
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 4.0,
+                                            vertical: 2.0,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: bgColor,
+                                            borderRadius:
+                                                BorderRadius.circular(4.0),
+                                          ),
+                                          child: Text(
+                                            displayWord,
+                                            style: TextStyle(
+                                              fontSize: 16.0,
+                                              color: textColor,
+                                              fontWeight: FontWeight.w600,
+                                              fontFamily: 'Regular',
+                                            ),
+                                          ),
+                                        );
+                                      }),
+                                    );
+                                  }
+
+                                  // Default: single-color text
+                                  return TextWidget(
+                                    text: content,
+                                    fontSize: 16.0,
+                                    color: isItemFailed
+                                        ? Colors.red
+                                        : isItemCompleted
+                                            ? Colors.green
+                                            : black,
+                                  );
+                                }(),
                               ),
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -687,6 +784,31 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                               ),
                             ],
                           ),
+                          // Show what the student said for sentence items
+                          if (item['type'] == 'Sentence' &&
+                              spokenTexts['$index'] != null &&
+                              spokenTexts['$index']!.isNotEmpty &&
+                              (isItemCompleted || isItemFailed)) ...[
+                            const SizedBox(height: 6.0),
+                            Row(
+                              children: [
+                                Icon(Icons.record_voice_over,
+                                    size: 14.0, color: grey),
+                                const SizedBox(width: 4.0),
+                                Expanded(
+                                  child: Text(
+                                    'Student said: "${spokenTexts['$index']}"',
+                                    style: TextStyle(
+                                      fontSize: 12.0,
+                                      color: grey,
+                                      fontStyle: FontStyle.italic,
+                                      fontFamily: 'Regular',
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                           // Audio recording player
                           if (audioUrl != null) ...[
                             const SizedBox(height: 8.0),
