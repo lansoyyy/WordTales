@@ -1347,12 +1347,12 @@ class _PracticeScreenState extends State<PracticeScreen>
         listenFor: isLevel5Sentence
             ? _level5ListenFor
             : (type == 'Sentence'
-                ? const Duration(seconds: 30)
+                ? const Duration(seconds: 15)
                 : const Duration(seconds: 25)),
         pauseFor: isLevel5Sentence
             ? _level5PauseFor
             : (type == 'Sentence'
-                ? const Duration(seconds: 5)
+                ? const Duration(seconds: 3)
                 : const Duration(seconds: 4)),
         localeId: _selectedLocaleId,
         onSoundLevelChange: (level) {
@@ -2277,8 +2277,8 @@ class _PracticeScreenState extends State<PracticeScreen>
       context: context,
       barrierDismissible: false,
       builder: (context) {
-        // Auto-dismiss after 1.5 seconds
-        Future.delayed(const Duration(milliseconds: 1500), () {
+        // Auto-dismiss after 1 second
+        Future.delayed(const Duration(milliseconds: 1000), () {
           if (mounted && Navigator.canPop(context)) {
             Navigator.of(context).pop();
           }

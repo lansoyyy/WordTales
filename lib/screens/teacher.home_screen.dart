@@ -465,8 +465,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     );
   }
 
-  void _showStudentLevelHistory(String studentId, String studentName,
-      int levelNumber, Map<String, dynamic> levelData) {
+  Future<void> _showStudentLevelHistory(String studentId, String studentName,
+      int levelNumber, Map<String, dynamic> levelData) async {
     // Extract per-item results (which items were completed or failed)
     final dynamic results = levelData['results'];
     final Set<int> completedItems = <int>{};
@@ -500,6 +500,35 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
         });
       }
     }
+
+    // Load ALL practice items (active + inactive) from Firestore so we can
+    // visually distinguish inactive items that don't count toward grading.
+    List<Map<String, dynamic>> allFirestoreItems = [];
+    try {
+      allFirestoreItems = await _practiceItemService.getCustomPracticeItems(
+        level: levelNumber,
+        teacherId: widget.teacherId,
+        includeInactive: true,
+      );
+    } catch (e) {
+      debugPrint('Error loading practice items for history: $e');
+    }
+
+    // Build the display items list. Use Firestore items if available,
+    // otherwise fall back to hardcoded defaults.
+    final List<Map<String, dynamic>> displayItems;
+    if (allFirestoreItems.isNotEmpty) {
+      displayItems = allFirestoreItems;
+    } else {
+      displayItems = (levels[levelNumber - 1]['content'] as List)
+          .map<Map<String, dynamic>>((item) => {
+                ...item as Map<String, dynamic>,
+                'is_active': true,
+              })
+          .toList();
+    }
+
+    if (!mounted) return;
 
     showDialog(
       context: context,
@@ -624,9 +653,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
               const SizedBox(height: 12.0),
               Expanded(
                 child: ListView.builder(
-                  itemCount: levels[levelNumber - 1]['content'].length,
+                  itemCount: displayItems.length,
                   itemBuilder: (context, index) {
-                    final item = levels[levelNumber - 1]['content'][index];
+                    final item = displayItems[index];
+                    final bool isActive = item['is_active'] == true;
                     final bool isItemCompleted = completedItems.contains(index);
                     final bool isItemFailed = failedItems.contains(index);
                     String? audioUrl;
@@ -639,6 +669,63 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                         audioUrl = urlValue;
                       }
                     }
+                    // Inactive items: grey bg, black text with strikethrough
+                    if (!isActive) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8.0),
+                        padding: const EdgeInsets.all(12.0),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8.0),
+                          border: Border.all(
+                            color: Colors.grey.shade300,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              item['type'] == 'Word'
+                                  ? Icons.text_fields
+                                  : Icons.short_text,
+                              color: Colors.grey.shade400,
+                              size: 20.0,
+                            ),
+                            const SizedBox(width: 12.0),
+                            Expanded(
+                              child: Text(
+                                item['content'] ?? '',
+                                style: TextStyle(
+                                  fontSize: 16.0,
+                                  color: black,
+                                  decoration: TextDecoration.lineThrough,
+                                  decorationColor: Colors.grey,
+                                  fontFamily: 'Regular',
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8.0, vertical: 4.0),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(4.0),
+                              ),
+                              child: Text(
+                                'Inactive',
+                                style: TextStyle(
+                                  fontSize: 11.0,
+                                  color: Colors.grey.shade600,
+                                  fontWeight: FontWeight.bold,
+                                  fontFamily: 'Regular',
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    // Active items: normal styling with colored feedback
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8.0),
                       padding: const EdgeInsets.all(12.0),

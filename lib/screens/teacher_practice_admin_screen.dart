@@ -121,10 +121,10 @@ class _TeacherPracticeAdminScreenState
     await _itemsSubscription?.cancel();
     _itemsSubscription = _practiceItemService
         .streamCustomPracticeItems(
-          level: widget.level,
-          teacherId: widget.teacherId,
-          includeInactive: true,
-        )
+      level: widget.level,
+      teacherId: widget.teacherId,
+      includeInactive: true,
+    )
         .listen((items) {
       if (!mounted) return;
       setState(() {
@@ -509,7 +509,8 @@ class _TeacherPracticeAdminScreenState
           ),
           ElevatedButton(
             onPressed: () async {
-              final success = await _practiceItemService.deleteCustomPracticeItem(
+              final success =
+                  await _practiceItemService.deleteCustomPracticeItem(
                 itemId: item['id'],
               );
 
@@ -664,12 +665,20 @@ class _TeacherPracticeAdminScreenState
                         title: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            TextWidget(
-                              text: item['content'] ?? '',
-                              fontSize: 20.0,
-                              color: isActive ? black : grey,
-                              isBold: true,
+                            Text(
+                              item['content'] ?? '',
+                              style: TextStyle(
+                                fontSize: 20.0,
+                                color: isActive ? black : black,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Regular',
+                                decoration: isActive
+                                    ? TextDecoration.none
+                                    : TextDecoration.lineThrough,
+                                decorationColor: Colors.grey,
+                              ),
                               maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 4.0),
                             Row(
