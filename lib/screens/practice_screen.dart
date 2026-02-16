@@ -2038,6 +2038,8 @@ class _PracticeScreenState extends State<PracticeScreen>
         completedItems: _completedItems.toList(),
         failedItems: _failedItems.toList(),
         incorrectAttempts: _incorrectAttempts,
+        spokenTexts:
+            _spokenTextsPerItem.map((k, v) => MapEntry(k.toString(), v)),
       );
     } catch (e) {
       debugPrint('Error saving partial progress: $e');
@@ -2088,6 +2090,8 @@ class _PracticeScreenState extends State<PracticeScreen>
           final dynamic completedItems = inProgress['completedItems'];
           final dynamic failedItems = inProgress['failedItems'];
           final dynamic incorrectAttempts = inProgress['incorrectAttempts'];
+          // Restore spoken texts for per-word coloring
+          final dynamic spokenTexts = inProgress['spokenTexts'];
 
           setState(() {
             if (idx is int && idx >= 0 && idx < practiceItems.length) {
@@ -2103,6 +2107,18 @@ class _PracticeScreenState extends State<PracticeScreen>
             }
             _incorrectAttempts =
                 incorrectAttempts is int ? incorrectAttempts : 0;
+            // Restore spoken texts map
+            if (spokenTexts is Map) {
+              _spokenTextsPerItem = {};
+              spokenTexts.forEach((key, value) {
+                if (key is String && value is String) {
+                  final int? index = int.tryParse(key);
+                  if (index != null) {
+                    _spokenTextsPerItem[index] = value;
+                  }
+                }
+              });
+            }
           });
         }
       } else {
@@ -2111,6 +2127,8 @@ class _PracticeScreenState extends State<PracticeScreen>
         if (results != null && results is Map) {
           final dynamic completedItems = results['completedItems'];
           final dynamic failedItems = results['failedItems'];
+          // Restore spoken texts for per-word coloring
+          final dynamic spokenTexts = results['spokenTexts'];
 
           setState(() {
             _isReviewMode = true;
@@ -2126,6 +2144,18 @@ class _PracticeScreenState extends State<PracticeScreen>
             if (failedItems is List) {
               _failedItems =
                   failedItems.map<int>((e) => (e as num).toInt()).toSet();
+            }
+            // Restore spoken texts map
+            if (spokenTexts is Map) {
+              _spokenTextsPerItem = {};
+              spokenTexts.forEach((key, value) {
+                if (key is String && value is String) {
+                  final int? index = int.tryParse(key);
+                  if (index != null) {
+                    _spokenTextsPerItem[index] = value;
+                  }
+                }
+              });
             }
           });
         } else {

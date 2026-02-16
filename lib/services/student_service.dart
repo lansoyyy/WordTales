@@ -251,9 +251,10 @@ class StudentService {
     required List<int> completedItems,
     required List<int> failedItems,
     required int incorrectAttempts,
+    Map<String, String>? spokenTexts,
   }) async {
     try {
-      await _firestore.collection(_studentsCollection).doc(studentId).update({
+      final updateData = <String, dynamic>{
         'levelProgress.$level.completed': false,
         'levelProgress.$level.score': score,
         'levelProgress.$level.totalItems': totalItems,
@@ -262,7 +263,16 @@ class StudentService {
         'levelProgress.$level.inProgress.completedItems': completedItems,
         'levelProgress.$level.inProgress.failedItems': failedItems,
         'levelProgress.$level.inProgress.incorrectAttempts': incorrectAttempts,
-      });
+      };
+
+      if (spokenTexts != null && spokenTexts.isNotEmpty) {
+        updateData['levelProgress.$level.results.spokenTexts'] = spokenTexts;
+      }
+
+      await _firestore
+          .collection(_studentsCollection)
+          .doc(studentId)
+          .update(updateData);
     } catch (e) {
       print('Error updating partial level progress: $e');
       rethrow;
