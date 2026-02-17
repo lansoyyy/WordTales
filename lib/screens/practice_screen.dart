@@ -1347,13 +1347,13 @@ class _PracticeScreenState extends State<PracticeScreen>
         listenFor: isLevel5Sentence
             ? _level5ListenFor
             : (type == 'Sentence'
-                ? const Duration(seconds: 10)
+                ? const Duration(seconds: 8)
                 : const Duration(seconds: 15)),
         pauseFor: isLevel5Sentence
             ? _level5PauseFor
             : (type == 'Sentence'
-                ? const Duration(seconds: 2)
-                : const Duration(seconds: 3)),
+                ? const Duration(seconds: 1)
+                : const Duration(seconds: 2)),
         localeId: _selectedLocaleId,
         onSoundLevelChange: (level) {
           if (!mounted) return;
@@ -2090,8 +2090,6 @@ class _PracticeScreenState extends State<PracticeScreen>
           final dynamic completedItems = inProgress['completedItems'];
           final dynamic failedItems = inProgress['failedItems'];
           final dynamic incorrectAttempts = inProgress['incorrectAttempts'];
-          // Restore spoken texts for per-word coloring
-          final dynamic spokenTexts = inProgress['spokenTexts'];
 
           setState(() {
             if (idx is int && idx >= 0 && idx < practiceItems.length) {
@@ -2107,8 +2105,15 @@ class _PracticeScreenState extends State<PracticeScreen>
             }
             _incorrectAttempts =
                 incorrectAttempts is int ? incorrectAttempts : 0;
-            // Restore spoken texts map
-            if (spokenTexts is Map) {
+          });
+        }
+
+        // Load spokenTexts from results (where it's actually saved)
+        final results = levelData['results'];
+        if (results != null && results is Map) {
+          final dynamic spokenTexts = results['spokenTexts'];
+          if (spokenTexts is Map) {
+            setState(() {
               _spokenTextsPerItem = {};
               spokenTexts.forEach((key, value) {
                 if (key is String && value is String) {
@@ -2118,8 +2123,8 @@ class _PracticeScreenState extends State<PracticeScreen>
                   }
                 }
               });
-            }
-          });
+            });
+          }
         }
       } else {
         // If level already completed, try to restore per-item results
