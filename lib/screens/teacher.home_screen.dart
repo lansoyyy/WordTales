@@ -835,6 +835,14 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                               color: textColor,
                                               fontWeight: FontWeight.w600,
                                               fontFamily: 'Regular',
+                                              decoration: status == 'incorrect'
+                                                  ? TextDecoration.underline
+                                                  : TextDecoration.none,
+                                              decorationColor:
+                                                  Colors.red.shade800,
+                                              decorationStyle:
+                                                  TextDecorationStyle.solid,
+                                              decorationThickness: 2.0,
                                             ),
                                           ),
                                         );

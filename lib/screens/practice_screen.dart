@@ -321,7 +321,7 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       // Generate feedback only at finalization time
       final target = practiceItems[_currentIndex]['content']!;
-      _generateCharacterFeedback(target, _recognizedText);
+      _updateCharacterFeedbackState(target, _recognizedText, isFinal: true);
 
       await _stopListening();
 
@@ -1508,13 +1508,19 @@ class _PracticeScreenState extends State<PracticeScreen>
 
     final target = practiceItems[_currentIndex]['content']!;
 
-    // Always update character-by-character feedback for the latest speech
-    _generateCharacterFeedback(target, _recognizedText);
+    // Always calculate character-by-character feedback for the latest speech to use for accuracy
+    final currentFeedback =
+        _calculateCharacterFeedback(target, _recognizedText);
 
     // Evaluate how well the speech matches the target
     final bool baseMatch = _matchesTarget(target, _recognizedText);
-    final double accuracy =
-        _characterFeedback.isNotEmpty ? _calculateAccuracyPercentage() : 0.0;
+    final double accuracy = currentFeedback.isNotEmpty
+        ? _calculateAccuracyPercentage(currentFeedback)
+        : 0.0;
+
+    // Update the visual UI state (this prevents blinking during active listening)
+    _updateCharacterFeedbackState(target, _recognizedText,
+        isFinal: result.finalResult);
 
     // Apply additional accuracy gating so that low-accuracy attempts
     // are not counted as correct, even if the similarity function is
@@ -1595,7 +1601,40 @@ class _PracticeScreenState extends State<PracticeScreen>
       return;
     }
 
-    // Only treat FINAL results as full attempts
+    // --- NON-LEVEL 5 SENTENCES EARLY FINALIZE LOGIC ---
+    // If it's a sentence and the student has spoken enough words but they are incorrect,
+    // don't wait for the full pauseFor timeout. Force stop to provide faster feedback.
+    if (!result.finalResult && type == 'Sentence' && !isMatch) {
+      final int targetWordCount =
+          target.split(' ').where((w) => w.isNotEmpty).length;
+      final int spokenWordCount =
+          mergedText.split(' ').where((w) => w.isNotEmpty).length;
+
+      // If student has spoken as many words as the target, or more, they are likely done.
+      // E.g., target: "I love my family" (4 words), student says: "I love my fumily" (4 words).
+      if (spokenWordCount >= targetWordCount && spokenWordCount > 0) {
+        // Schedule a very short timer to finalize, in case they are just pausing mid-word.
+        // This bypasses Android's long default silence wait.
+        _level5SentenceFinalizeTimer?.cancel();
+        _level5SentenceFinalizeTimer =
+            Timer(const Duration(milliseconds: 500), () {
+          if (!mounted || _isListening == false) return;
+          debugPrint(
+              'Early finalize triggered for sentence due to word count match');
+          _stopListening();
+          if (!_completedItems.contains(_currentIndex) &&
+              !_failedItems.contains(_currentIndex)) {
+            _showIncorrectFeedbackMessage();
+          }
+        });
+      } else {
+        // If they haven't spoken enough words, cancel the early finalize timer.
+        _level5SentenceFinalizeTimer?.cancel();
+      }
+      return;
+    }
+
+    // Only treat FINAL results as full attempts (unless early finalized above)
     if (!result.finalResult) {
       return;
     }
@@ -1616,27 +1655,14 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
   }
 
-  void _generateCharacterFeedback(String target, String spoken) {
+  List<String> _calculateCharacterFeedback(String target, String spoken) {
     final type = practiceItems[_currentIndex]['type'];
+    final feedback = <String>[];
 
-    // For Level 5 sentences, don't generate feedback during active session
-    // to prevent the UI from showing red/green while the child is still speaking.
-    // Feedback will be generated only when the session is finalized.
-    if (type == 'Sentence' &&
-        widget.level == 5 &&
-        _isLevel5SentenceSessionActive &&
-        !_isFinalizingLevel5SentenceAttempt) {
-      return;
-    }
-
-    // For sentences, provide feedback at the word level so that only the
-    // misread words are highlighted (e.g., only "eat" turns red in
-    // "I eat my food" when that word is mispronounced).
     if (type == 'Sentence') {
       final targetWords = target.toUpperCase().trim().split(RegExp(r'\s+'));
       final spokenWords = spoken.toUpperCase().trim().split(RegExp(r'\s+'));
 
-      final feedback = <String>[];
       for (int i = 0; i < targetWords.length; i++) {
         final targetWord = targetWords[i];
 
@@ -1656,17 +1682,11 @@ class _PracticeScreenState extends State<PracticeScreen>
           feedback.add('missing');
         }
       }
-
-      setState(() {
-        _characterFeedback = feedback;
-      });
-      return;
+      return feedback;
     }
 
-    // For letters and words, keep character-level feedback.
     final targetChars = target.toUpperCase().split('');
     final spokenChars = spoken.toUpperCase().split('');
-    final feedback = <String>[];
 
     for (int i = 0; i < targetChars.length; i++) {
       if (i < spokenChars.length && targetChars[i] == spokenChars[i]) {
@@ -1677,17 +1697,28 @@ class _PracticeScreenState extends State<PracticeScreen>
         feedback.add('missing');
       }
     }
+    return feedback;
+  }
 
+  void _updateCharacterFeedbackState(String target, String spoken,
+      {bool isFinal = false}) {
+    // Prevent blinking: ONLY update the visual feedback on the UI when the result is final.
+    // During active listening, we don't want the colors flashing.
+    if (!isFinal && _isListening) {
+      return;
+    }
+
+    final feedback = _calculateCharacterFeedback(target, spoken);
     setState(() {
       _characterFeedback = feedback;
     });
   }
 
-  double _calculateAccuracyPercentage() {
-    if (_characterFeedback.isEmpty) return 0.0;
+  double _calculateAccuracyPercentage(List<String> feedback) {
+    if (feedback.isEmpty) return 0.0;
     final int correctCount =
-        _characterFeedback.where((status) => status == 'correct').length;
-    return 100.0 * correctCount / _characterFeedback.length;
+        feedback.where((status) => status == 'correct').length;
+    return 100.0 * correctCount / feedback.length;
   }
 
   void _showIncorrectFeedbackMessage() {
@@ -2428,7 +2459,8 @@ class _PracticeScreenState extends State<PracticeScreen>
                 if (_characterFeedback.isNotEmpty)
                   TextWidget(
                     text: 'Accuracy: ' +
-                        _calculateAccuracyPercentage().toStringAsFixed(0) +
+                        _calculateAccuracyPercentage(_characterFeedback)
+                            .toStringAsFixed(0) +
                         '%',
                     fontSize: 16.0,
                     color: grey,
@@ -3419,7 +3451,8 @@ class _PracticeScreenState extends State<PracticeScreen>
                                     padding: const EdgeInsets.only(top: 8.0),
                                     child: TextWidget(
                                       text: 'Accuracy: ' +
-                                          _calculateAccuracyPercentage()
+                                          _calculateAccuracyPercentage(
+                                                  _characterFeedback)
                                               .toStringAsFixed(0) +
                                           '%',
                                       fontSize: 14.0,
