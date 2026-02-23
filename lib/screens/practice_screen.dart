@@ -127,7 +127,7 @@ class _PracticeScreenState extends State<PracticeScreen>
   static const Duration _level5MaxSession =
       Duration(seconds: 300); // 5 min total
   static const Duration _level5FinalizeSilence =
-      Duration(seconds: 5); // finalize after 5s silence
+      Duration(seconds: 20); // finalize after 20s silence
   static const Duration _level5RestartDelay = Duration(milliseconds: 400);
 
   String _mergeSentenceText(String a, String b) {
@@ -325,6 +325,11 @@ class _PracticeScreenState extends State<PracticeScreen>
 
       await _stopListening();
 
+      // Deactivate session so _onSpeechStatus doesn't auto-restart STT
+      // after an incorrect attempt (which would bypass the 2-try mechanism)
+      _isLevel5SentenceSessionActive = false;
+      _level5SentenceRestartTimer?.cancel();
+
       if (_completedItems.contains(_currentIndex) ||
           _failedItems.contains(_currentIndex)) {
         return;
@@ -334,8 +339,10 @@ class _PracticeScreenState extends State<PracticeScreen>
         _markCurrentItemAsCorrect();
       } else {
         if (_recognizedText.trim().isNotEmpty) {
-          // For sentences, proceed immediately without requiring 2 attempts
-          _markCurrentItemAsIncorrect();
+          _showIncorrectFeedbackMessage();
+        } else {
+          // Nothing recognized - reset so student can try again
+          _isFinalizingLevel5SentenceAttempt = false;
         }
       }
     } finally {
@@ -1594,24 +1601,25 @@ class _PracticeScreenState extends State<PracticeScreen>
         return;
       }
 
-      // Instead of waiting for more speech on every non-match, we should check if they've spoken enough words
+      // Not a match — check if student has spoken enough words to count as a full attempt.
+      // If yes, finalize quickly (2s) instead of waiting 20s.
+      // If no, keep accumulating via STT restart.
       final int targetWordCount =
           target.split(' ').where((w) => w.isNotEmpty).length;
       final int spokenWordCount =
           mergedText.split(' ').where((w) => w.isNotEmpty).length;
 
-      if (spokenWordCount >= targetWordCount && spokenWordCount > 0) {
-        // If they've spoken enough words but it's not a match, finalize it as incorrect immediately
-        debugPrint('[L5] Word count reached, finalizing as incorrect');
-        await _finalizeLevel5SentenceAttempt(isCorrect: false);
-        return;
+      if (targetWordCount > 0 && spokenWordCount >= (targetWordCount * 0.6).ceil()) {
+        debugPrint('[L5] Enough words ($spokenWordCount/$targetWordCount) but no match — short finalize.');
+        _level5SentenceFinalizeTimer?.cancel();
+        _level5SentenceFinalizeTimer = Timer(const Duration(seconds: 2), () async {
+          if (!mounted) return;
+          await _finalizeLevel5SentenceAttempt(isCorrect: false);
+        });
+      } else {
+        debugPrint('[L5] Not enough words yet ($spokenWordCount/$targetWordCount), waiting...');
+        _scheduleLevel5SentenceFinalizeCheck();
       }
-
-      // NOT a match yet AND word count not reached — don't mark incorrect. Android will fire
-      // _onSpeechStatus("done") which triggers automatic restart + finalize backup.
-      // Just reset the finalize timer to give the child more time.
-      debugPrint('[L5] Not a match yet, waiting for more speech...');
-      _scheduleLevel5SentenceFinalizeCheck();
       return;
     }
 
@@ -1632,14 +1640,15 @@ class _PracticeScreenState extends State<PracticeScreen>
         _level5SentenceFinalizeTimer?.cancel();
         _level5SentenceFinalizeTimer =
             Timer(const Duration(milliseconds: 500), () {
-          if (!mounted || _isListening == false) return;
+          if (!mounted) return;
+          // Do NOT check _isListening here — Android may have stopped STT
+          // before this timer fires, which previously caused silent drops.
           debugPrint(
               'Early finalize triggered for sentence due to word count match');
           _stopListening();
           if (!_completedItems.contains(_currentIndex) &&
               !_failedItems.contains(_currentIndex)) {
-            // For sentences, proceed immediately without requiring 2 attempts
-            _markCurrentItemAsIncorrect();
+            _showIncorrectFeedbackMessage();
           }
         });
       } else {
@@ -1654,6 +1663,9 @@ class _PracticeScreenState extends State<PracticeScreen>
       return;
     }
 
+    // Cancel any pending early-finalize timer to prevent double-calling
+    // _showIncorrectFeedbackMessage() (once from timer, once from here).
+    _level5SentenceFinalizeTimer?.cancel();
     _stopListening();
 
     if (isMatch) {
@@ -1665,12 +1677,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     } else if (_recognizedText.isNotEmpty) {
       if (!_completedItems.contains(_currentIndex) &&
           !_failedItems.contains(_currentIndex)) {
-        if (type == 'Sentence') {
-          // For sentences, proceed immediately without requiring 2 attempts
-          _markCurrentItemAsIncorrect();
-        } else {
-          _showIncorrectFeedbackMessage();
-        }
+        _showIncorrectFeedbackMessage();
       }
     }
   }
@@ -1872,18 +1879,6 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   String _getMixedFeedbackMessage() {
-    final type = practiceItems[_currentIndex]['type'];
-    if (type == 'Sentence') {
-      final messages = [
-        'Good start! Some words are right, keep practicing! 🌈',
-        'You\'re close! Check the underlined words and try again! 🎯',
-        'Nice try! Focus on the underlined words! 💡',
-        'Almost there! Some parts are perfect! ⭐',
-        'Good effort! Look at the green words and fix the underlined ones! 🔍',
-      ];
-      return messages[_incorrectAttempts % messages.length];
-    }
-    
     final messages = [
       'Good start! Some letters are right, keep trying! 🌈',
       'You\'re close! Check the red letters and try again! 🎯',
@@ -3146,19 +3141,10 @@ class _PracticeScreenState extends State<PracticeScreen>
                                               borderColor = Colors.green;
                                               textColor = Colors.green.shade800;
                                             } else if (status == 'incorrect') {
-                                              if (widget.isTeacher == true) {
-                                                bgColor =
-                                                    Colors.red.withOpacity(0.2);
-                                                borderColor = Colors.red;
-                                                textColor = Colors.red.shade800;
-                                              } else {
-                                                // Don't show red to students for sentences,
-                                                // but do show an underline to indicate it was spoken incorrectly.
-                                                bgColor = Colors.grey
-                                                    .withOpacity(0.1);
-                                                borderColor = Colors.grey;
-                                                textColor = primary;
-                                              }
+                                              bgColor =
+                                                  Colors.red.withOpacity(0.2);
+                                              borderColor = Colors.red;
+                                              textColor = Colors.red.shade800;
                                             } else {
                                               bgColor =
                                                   Colors.grey.withOpacity(0.1);
@@ -3186,16 +3172,12 @@ class _PracticeScreenState extends State<PracticeScreen>
                                                   width: 1.5,
                                                 ),
                                               ),
-                                              child: Text(
-                                                word,
-                                                style: TextStyle(
-                                                  fontSize: 26.0,
-                                                  color: textColor,
-                                                  fontWeight: FontWeight.w800,
-                                                  fontFamily: 'Regular',
-                                                  decoration: TextDecoration.none,
-                                                ),
-                                                textAlign: TextAlign.center,
+                                              child: TextWidget(
+                                                text: word,
+                                                fontSize: 26.0,
+                                                color: textColor,
+                                                isBold: true,
+                                                fontFamily: 'Regular',
                                               ),
                                             );
                                           });
