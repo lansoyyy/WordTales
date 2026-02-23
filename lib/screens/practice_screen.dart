@@ -1623,42 +1623,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       return;
     }
 
-    // --- NON-LEVEL 5 SENTENCES EARLY FINALIZE LOGIC ---
-    // If it's a sentence and the student has spoken enough words but they are incorrect,
-    // don't wait for the full pauseFor timeout. Force stop to provide faster feedback.
-    if (!result.finalResult && type == 'Sentence' && !isMatch) {
-      final int targetWordCount =
-          target.split(' ').where((w) => w.isNotEmpty).length;
-      final int spokenWordCount =
-          mergedText.split(' ').where((w) => w.isNotEmpty).length;
-
-      // If student has spoken as many words as the target, or more, they are likely done.
-      // E.g., target: "I love my family" (4 words), student says: "I love my fumily" (4 words).
-      if (spokenWordCount >= targetWordCount && spokenWordCount > 0) {
-        // Schedule a very short timer to finalize, in case they are just pausing mid-word.
-        // This bypasses Android's long default silence wait.
-        _level5SentenceFinalizeTimer?.cancel();
-        _level5SentenceFinalizeTimer =
-            Timer(const Duration(milliseconds: 500), () {
-          if (!mounted) return;
-          // Do NOT check _isListening here — Android may have stopped STT
-          // before this timer fires, which previously caused silent drops.
-          debugPrint(
-              'Early finalize triggered for sentence due to word count match');
-          _stopListening();
-          if (!_completedItems.contains(_currentIndex) &&
-              !_failedItems.contains(_currentIndex)) {
-            _showIncorrectFeedbackMessage();
-          }
-        });
-      } else {
-        // If they haven't spoken enough words, cancel the early finalize timer.
-        _level5SentenceFinalizeTimer?.cancel();
-      }
-      return;
-    }
-
-    // Only treat FINAL results as full attempts (unless early finalized above)
+    // Only treat FINAL results as full attempts
     if (!result.finalResult) {
       return;
     }
