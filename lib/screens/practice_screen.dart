@@ -1633,6 +1633,10 @@ class _PracticeScreenState extends State<PracticeScreen>
     _level5SentenceFinalizeTimer?.cancel();
     _stopListening();
 
+    // Update visual feedback AFTER stopping listening to ensure it's displayed
+    final feedbackTarget = practiceItems[_currentIndex]['content']!;
+    _updateCharacterFeedbackState(feedbackTarget, _recognizedText, isFinal: true);
+
     if (isMatch) {
       // Correct answer - add to score and proceed
       if (!_completedItems.contains(_currentIndex) &&
@@ -1650,27 +1654,29 @@ class _PracticeScreenState extends State<PracticeScreen>
   List<String> _calculateCharacterFeedback(String target, String spoken) {
     final type = practiceItems[_currentIndex]['type'];
     final feedback = <String>[];
-
+    
     if (type == 'Sentence') {
       final targetWords = target.toUpperCase().trim().split(RegExp(r'\s+'));
       final spokenWords = spoken.toUpperCase().trim().split(RegExp(r'\s+'));
-
+      
       for (int i = 0; i < targetWords.length; i++) {
         final targetWord = targetWords[i];
-
+        
         if (targetWord.isEmpty) {
           feedback.add('missing');
           continue;
         }
-
+        
         if (i < spokenWords.length) {
           final spokenWord = spokenWords[i];
           if (spokenWord == targetWord) {
             feedback.add('correct');
           } else {
+            // Word doesn't match - mark as incorrect
             feedback.add('incorrect');
           }
         } else {
+          // Not enough spoken words - mark as missing
           feedback.add('missing');
         }
       }
@@ -1696,6 +1702,7 @@ class _PracticeScreenState extends State<PracticeScreen>
       {bool isFinal = false}) {
     // Prevent blinking: ONLY update the visual feedback on the UI when the result is final.
     // During active listening, we don't want the colors flashing.
+    // But ALWAYS update when isFinal is true to ensure incorrect words are shown.
     if (!isFinal && _isListening) {
       return;
     }
@@ -1704,6 +1711,11 @@ class _PracticeScreenState extends State<PracticeScreen>
     setState(() {
       _characterFeedback = feedback;
     });
+    
+    // Debug: Log when feedback is updated
+    if (isFinal) {
+      debugPrint('[Feedback] Updated character feedback: $feedback');
+    }
   }
 
   double _calculateAccuracyPercentage(List<String> feedback) {
