@@ -530,6 +530,17 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
 
     if (!mounted) return;
 
+    // Create a mapping from display index to active index
+    int activeCount = 0;
+    final Map<int, int> displayIndexToActiveIndex = {};
+    for (int i = 0; i < displayItems.length; i++) {
+      final isActive = displayItems[i]['is_active'];
+      if (isActive == null || isActive == true) {
+        displayIndexToActiveIndex[i] = activeCount;
+        activeCount++;
+      }
+    }
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -657,14 +668,20 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                   itemBuilder: (context, index) {
                     final item = displayItems[index];
                     final bool isActive = item['is_active'] == true;
-                    final bool isItemCompleted = completedItems.contains(index);
-                    final bool isItemFailed = failedItems.contains(index);
+
+                    // Only active items have results
+                    final int? activeIndex = displayIndexToActiveIndex[index];
+                    final bool isItemCompleted = activeIndex != null &&
+                        completedItems.contains(activeIndex);
+                    final bool isItemFailed = activeIndex != null &&
+                        failedItems.contains(activeIndex);
                     String? audioUrl;
                     final dynamic audioRecordings =
                         levelData['audioRecordings'];
-                    if (audioRecordings is Map) {
+                    if (activeIndex != null && audioRecordings is Map) {
                       final dynamic urlValue =
-                          audioRecordings['$index'] ?? audioRecordings[index];
+                          audioRecordings['$activeIndex'] ??
+                              audioRecordings[activeIndex];
                       if (urlValue is String && urlValue.trim().isNotEmpty) {
                         audioUrl = urlValue;
                       }
@@ -760,8 +777,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                               Expanded(
                                 child: () {
                                   final String content = item['content'] ?? '';
-                                  final String? spokenText =
-                                      spokenTexts['$index'];
+                                  final String? spokenText = activeIndex != null
+                                      ? spokenTexts['$activeIndex']
+                                      : null;
                                   final bool isSentence =
                                       item['type'] == 'Sentence';
 
@@ -881,8 +899,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                           ),
                           // Show what the student said for sentence items
                           if (item['type'] == 'Sentence' &&
-                              spokenTexts['$index'] != null &&
-                              spokenTexts['$index']!.isNotEmpty &&
+                              activeIndex != null &&
+                              spokenTexts['$activeIndex'] != null &&
+                              spokenTexts['$activeIndex']!.isNotEmpty &&
                               (isItemCompleted || isItemFailed)) ...[
                             const SizedBox(height: 6.0),
                             Row(
@@ -892,7 +911,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                 const SizedBox(width: 4.0),
                                 Expanded(
                                   child: Text(
-                                    'Student said: "${spokenTexts['$index']}"',
+                                    'Student said: "${spokenTexts['$activeIndex']}"',
                                     style: TextStyle(
                                       fontSize: 12.0,
                                       color: grey,
