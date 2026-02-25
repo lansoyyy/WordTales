@@ -192,6 +192,8 @@ class _LoginScreenState extends State<LoginScreen> {
     required String section,
     required String teacherName,
   }) async {
+    final sectionEmoji = _getSectionEmoji(section);
+    final sectionDisplay = '$sectionEmoji $section';
     return await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -224,8 +226,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   _buildDetailRow('Name:', studentName),
                   const SizedBox(height: 12.0),
-                  _buildDetailRow(
-                      'Section:', '$_getSectionEmoji(section) $section'),
+                  _buildDetailRow('Section:', sectionDisplay),
                   const SizedBox(height: 12.0),
                   _buildDetailRow('Teacher:', teacherName),
                 ],
