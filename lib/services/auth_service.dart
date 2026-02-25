@@ -164,6 +164,28 @@ class AuthService {
     }
   }
 
+  // Get teacher by section
+  Future<Map<String, dynamic>?> getTeacherBySection(String section) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection(_teachersCollection)
+          .where('section', isEqualTo: section)
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        final teacherData = querySnapshot.docs.first.data();
+        teacherData['id'] = querySnapshot.docs.first.id;
+        return teacherData;
+      }
+      return null;
+    } catch (e) {
+      print('Error getting teacher by section: $e');
+      rethrow;
+    }
+  }
+
   // Get teacher by ID
   Future<Map<String, dynamic>?> getTeacher(String teacherId) async {
     try {

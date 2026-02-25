@@ -118,23 +118,46 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // Determine which teacher this student belongs to.
-      // If a teacher has logged in on this device, we use that teacher's ID.
-      // Otherwise, fall back to the original 'default_teacher'.
-      final prefs = await SharedPreferences.getInstance();
-      final String selectedTeacherId =
-          prefs.getString('current_teacher_id') ?? 'default_teacher';
+      // Get teacher for the selected section
+      final teacher = await _authService.getTeacherBySection(_selectedSection!);
+
+      if (teacher == null) {
+        Fluttertoast.showToast(
+          msg: 'No teacher found for this section',
+          backgroundColor: Colors.red,
+          textColor: white,
+        );
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Show confirmation dialog
+      final confirmed = await _showStudentLoginConfirmationDialog(
+        studentName: _studentNameController.text.trim(),
+        section: _selectedSection!,
+        teacherName: teacher['name'] ?? 'Unknown',
+      );
+
+      if (!confirmed) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
 
       // Find or create student for the selected teacher
       await _studentService.findOrCreateStudent(
         name: _studentNameController.text.trim(),
-        teacherId: selectedTeacherId,
+        teacherId: teacher['id'],
         section: _selectedSection!,
       );
 
       // Save student name and associated teacher to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
       await prefs.setString('student_name', _studentNameController.text.trim());
-      await prefs.setString('current_teacher_id', selectedTeacherId);
+      await prefs.setString('current_teacher_id', teacher['id']);
 
       Fluttertoast.showToast(
         msg: 'Welcome back, ${_studentNameController.text}!',
@@ -161,6 +184,126 @@ class _LoginScreenState extends State<LoginScreen> {
         });
       }
     }
+  }
+
+  // Show confirmation dialog for student login
+  Future<bool> _showStudentLoginConfirmationDialog({
+    required String studentName,
+    required String section,
+    required String teacherName,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20.0),
+            ),
+            title: Column(
+              children: [
+                Icon(
+                  Icons.check_circle_rounded,
+                  color: primary,
+                  size: 60.0,
+                ),
+                const SizedBox(height: 16.0),
+                TextWidget(
+                  text: 'Confirm Your Details',
+                  fontSize: 20.0,
+                  color: primary,
+                  isBold: true,
+                  align: TextAlign.center,
+                ),
+              ],
+            ),
+            content: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildDetailRow('Name:', studentName),
+                  const SizedBox(height: 12.0),
+                  _buildDetailRow(
+                      'Section:', '$_getSectionEmoji(section) $section'),
+                  const SizedBox(height: 12.0),
+                  _buildDetailRow('Teacher:', teacherName),
+                ],
+              ),
+            ),
+            actions: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey[400],
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12.0),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12.0),
+                        ),
+                        child: TextWidget(
+                          text: 'No, Edit',
+                          fontSize: 16.0,
+                          color: white,
+                          isBold: true,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12.0),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12.0),
+                        ),
+                        child: TextWidget(
+                          text: 'Yes, Correct',
+                          fontSize: 16.0,
+                          color: white,
+                          isBold: true,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  // Build detail row for confirmation dialog
+  Widget _buildDetailRow(String label, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextWidget(
+          text: label,
+          fontSize: 14.0,
+          color: grey,
+          isBold: true,
+        ),
+        const SizedBox(height: 4.0),
+        TextWidget(
+          text: value,
+          fontSize: 16.0,
+          color: Colors.black87,
+        ),
+      ],
+    );
   }
 
   // Handle teacher login
