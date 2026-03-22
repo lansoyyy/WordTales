@@ -1609,15 +1609,19 @@ class _PracticeScreenState extends State<PracticeScreen>
       final int spokenWordCount =
           mergedText.split(' ').where((w) => w.isNotEmpty).length;
 
-      if (targetWordCount > 0 && spokenWordCount >= (targetWordCount * 0.6).ceil()) {
-        debugPrint('[L5] Enough words ($spokenWordCount/$targetWordCount) but no match — short finalize.');
+      if (targetWordCount > 0 &&
+          spokenWordCount >= (targetWordCount * 0.6).ceil()) {
+        debugPrint(
+            '[L5] Enough words ($spokenWordCount/$targetWordCount) but no match — short finalize.');
         _level5SentenceFinalizeTimer?.cancel();
-        _level5SentenceFinalizeTimer = Timer(const Duration(seconds: 2), () async {
+        _level5SentenceFinalizeTimer =
+            Timer(const Duration(seconds: 2), () async {
           if (!mounted) return;
           await _finalizeLevel5SentenceAttempt(isCorrect: false);
         });
       } else {
-        debugPrint('[L5] Not enough words yet ($spokenWordCount/$targetWordCount), waiting...');
+        debugPrint(
+            '[L5] Not enough words yet ($spokenWordCount/$targetWordCount), waiting...');
         _scheduleLevel5SentenceFinalizeCheck();
       }
       return;
@@ -1635,7 +1639,8 @@ class _PracticeScreenState extends State<PracticeScreen>
 
     // Update visual feedback AFTER stopping listening to ensure it's displayed
     final feedbackTarget = practiceItems[_currentIndex]['content']!;
-    _updateCharacterFeedbackState(feedbackTarget, _recognizedText, isFinal: true);
+    _updateCharacterFeedbackState(feedbackTarget, _recognizedText,
+        isFinal: true);
 
     if (isMatch) {
       // Correct answer - add to score and proceed
@@ -1654,19 +1659,19 @@ class _PracticeScreenState extends State<PracticeScreen>
   List<String> _calculateCharacterFeedback(String target, String spoken) {
     final type = practiceItems[_currentIndex]['type'];
     final feedback = <String>[];
-    
+
     if (type == 'Sentence') {
       final targetWords = target.toUpperCase().trim().split(RegExp(r'\s+'));
       final spokenWords = spoken.toUpperCase().trim().split(RegExp(r'\s+'));
-      
+
       for (int i = 0; i < targetWords.length; i++) {
         final targetWord = targetWords[i];
-        
+
         if (targetWord.isEmpty) {
           feedback.add('missing');
           continue;
         }
-        
+
         if (i < spokenWords.length) {
           final spokenWord = spokenWords[i];
           if (spokenWord == targetWord) {
@@ -1711,7 +1716,7 @@ class _PracticeScreenState extends State<PracticeScreen>
     setState(() {
       _characterFeedback = feedback;
     });
-    
+
     // Debug: Log when feedback is updated
     if (isFinal) {
       debugPrint('[Feedback] Updated character feedback: $feedback');
@@ -2015,10 +2020,16 @@ class _PracticeScreenState extends State<PracticeScreen>
     if (widget.isTeacher! || widget.studentId == null) return;
 
     try {
+      final int normalizedScore = _getNormalizedScore(
+        rawScore: _score,
+        completedItems: _completedItems,
+        totalItems: _totalItems,
+      );
+
       await _studentService.updateLevelProgress(
         studentId: widget.studentId!,
         level: widget.level!,
-        score: _score,
+        score: normalizedScore,
         totalItems: _totalItems,
         completedItems: _completedItems.toList(),
         failedItems: _failedItems.toList(),
@@ -2064,10 +2075,16 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
 
     try {
+      final int normalizedScore = _getNormalizedScore(
+        rawScore: _score,
+        completedItems: _completedItems,
+        totalItems: _totalItems,
+      );
+
       await _studentService.updateLevelPartialProgress(
         studentId: widget.studentId!,
         level: widget.level!,
-        score: _score,
+        score: normalizedScore,
         totalItems: _totalItems,
         currentIndex: _currentIndex,
         completedItems: _completedItems.toList(),
@@ -2095,21 +2112,15 @@ class _PracticeScreenState extends State<PracticeScreen>
       if (levelData == null) return;
 
       final bool completed = levelData['completed'] == true;
-      final int storedScore = (levelData['score'] ?? 0) as int;
-
-      // Use the current number of practice items as the source of truth
-      // for totalItems. If older saved data has a smaller total (e.g., 5
-      // when the level now has 10 items), prefer the actual count so
-      // the score denominator is correct.
-      // IMPORTANT: practiceItems should already be filtered to active items only
-      // by the stream listener (see _initializePracticeItems).
-      final int actualTotal = practiceItems.length;
       final int storedTotalRaw =
           (levelData['totalItems'] ?? _totalItems) as int;
-
-      // Always prefer the actual total from current practice items
-      // since it reflects the current active item count from Firestore
-      int effectiveTotal = actualTotal > 0 ? actualTotal : storedTotalRaw;
+      final int actualTotal = practiceItems.length;
+      final int effectiveTotal =
+          storedTotalRaw > 0 ? storedTotalRaw : actualTotal;
+      final int storedScore = _getNormalizedStoredScore(
+        levelData,
+        effectiveTotal,
+      );
 
       if (!mounted) return;
 
@@ -2212,6 +2223,53 @@ class _PracticeScreenState extends State<PracticeScreen>
     }
   }
 
+  int _getNormalizedScore({
+    required int rawScore,
+    required Set<int> completedItems,
+    required int totalItems,
+  }) {
+    final int derivedScore =
+        completedItems.length > rawScore ? completedItems.length : rawScore;
+    if (totalItems <= 0) {
+      return derivedScore < 0 ? 0 : derivedScore;
+    }
+    if (derivedScore < 0) return 0;
+    if (derivedScore > totalItems) return totalItems;
+    return derivedScore;
+  }
+
+  Set<int> _extractCompletedItems(dynamic source) {
+    final Set<int> items = <int>{};
+    if (source is List) {
+      items.addAll(source.whereType<num>().map((e) => e.toInt()));
+    }
+    return items;
+  }
+
+  int _getNormalizedStoredScore(
+      Map<dynamic, dynamic> levelData, int totalItems) {
+    final int rawScore =
+        (levelData['score'] is num) ? (levelData['score'] as num).toInt() : 0;
+
+    final Set<int> completedItems = <int>{};
+    final dynamic results = levelData['results'];
+    if (results is Map) {
+      completedItems.addAll(_extractCompletedItems(results['completedItems']));
+    }
+
+    final dynamic inProgress = levelData['inProgress'];
+    if (completedItems.isEmpty && inProgress is Map) {
+      completedItems
+          .addAll(_extractCompletedItems(inProgress['completedItems']));
+    }
+
+    return _getNormalizedScore(
+      rawScore: completedItems.isNotEmpty ? completedItems.length : rawScore,
+      completedItems: completedItems,
+      totalItems: totalItems,
+    );
+  }
+
   @override
   void dispose() {
     _animationController.dispose();
@@ -2294,10 +2352,13 @@ class _PracticeScreenState extends State<PracticeScreen>
   }
 
   void _markCurrentItemAsCompleted() {
+    final bool wasCompleted = _completedItems.contains(_currentIndex);
     setState(() {
       _failedItems.remove(_currentIndex);
       _completedItems.add(_currentIndex);
-      _score += 1;
+      if (!wasCompleted && _score < _totalItems) {
+        _score += 1;
+      }
       _showIncorrectFeedback = false;
       _incorrectAttempts = 0;
     });
@@ -2313,10 +2374,13 @@ class _PracticeScreenState extends State<PracticeScreen>
   // Mark current item as correct - add score and auto-proceed
   void _markCurrentItemAsCorrect() {
     _spokenTextsPerItem[_currentIndex] = _recognizedText;
+    final bool wasCompleted = _completedItems.contains(_currentIndex);
     setState(() {
       _failedItems.remove(_currentIndex);
       _completedItems.add(_currentIndex);
-      _score += 1;
+      if (!wasCompleted && _score < _totalItems) {
+        _score += 1;
+      }
       _showIncorrectFeedback = false;
       _incorrectAttempts = 0;
     });
@@ -2328,9 +2392,13 @@ class _PracticeScreenState extends State<PracticeScreen>
   // Mark current item as incorrect - no score, auto-proceed
   void _markCurrentItemAsIncorrect() {
     _spokenTextsPerItem[_currentIndex] = _recognizedText;
+    final bool wasCompleted = _completedItems.contains(_currentIndex);
     setState(() {
       _completedItems.remove(_currentIndex);
       _failedItems.add(_currentIndex);
+      if (wasCompleted && _score > 0) {
+        _score -= 1;
+      }
       _showIncorrectFeedback = true;
     });
 
@@ -2758,8 +2826,13 @@ class _PracticeScreenState extends State<PracticeScreen>
                       }
 
                       // Call the callback to unlock next level with score
+                      final int normalizedScore = _getNormalizedScore(
+                        rawScore: _score,
+                        completedItems: _completedItems,
+                        totalItems: _totalItems,
+                      );
                       widget.onLevelCompletedWithScore
-                          ?.call(_score, _totalItems);
+                          ?.call(normalizedScore, _totalItems);
                       widget.onLevelCompleted?.call();
                     },
                     style: ElevatedButton.styleFrom(

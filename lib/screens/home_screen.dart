@@ -94,6 +94,51 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
+  Set<int> _extractCompletedItems(dynamic source) {
+    final Set<int> items = <int>{};
+    if (source is List) {
+      items.addAll(source.whereType<num>().map((e) => e.toInt()));
+    }
+    return items;
+  }
+
+  int _resolveStoredTotalItems(Map<dynamic, dynamic> levelData, int fallback) {
+    final int storedTotal = levelData['totalItems'] is num
+        ? (levelData['totalItems'] as num).toInt()
+        : 0;
+    if (storedTotal > 0) {
+      return storedTotal;
+    }
+    return fallback > 0 ? fallback : 0;
+  }
+
+  int _resolveNormalizedScore(Map<dynamic, dynamic> levelData, int totalItems) {
+    final int rawScore =
+        levelData['score'] is num ? (levelData['score'] as num).toInt() : 0;
+
+    final Set<int> completedItems = <int>{};
+    final dynamic results = levelData['results'];
+    if (results is Map) {
+      completedItems.addAll(_extractCompletedItems(results['completedItems']));
+    }
+
+    final dynamic inProgress = levelData['inProgress'];
+    if (completedItems.isEmpty && inProgress is Map) {
+      completedItems
+          .addAll(_extractCompletedItems(inProgress['completedItems']));
+    }
+
+    int normalizedScore =
+        completedItems.isNotEmpty ? completedItems.length : rawScore;
+    if (normalizedScore < 0) {
+      normalizedScore = 0;
+    }
+    if (totalItems > 0 && normalizedScore > totalItems) {
+      normalizedScore = totalItems;
+    }
+    return normalizedScore;
+  }
+
   // Load student information from SharedPreferences
   Future<void> _loadStudentInfo() async {
     try {
@@ -131,20 +176,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               if (value is! Map) return;
 
               final completed = value['completed'] == true;
-              final score = (value['score'] ?? 0) as int;
-
-              // Use the actual active item count from Firestore if available,
-              // otherwise fall back to the stored totalItems from the student's
-              // progress data. This ensures the denominator reflects only the
-              // active items the student actually practiced.
               final int activeCount = _activeItemCounts[levelNumber] ?? 0;
-              final int storedTotal = (value['totalItems'] ?? 0) as int;
-              int loadedTotalItems = activeCount > 0
+              final int fallbackTotal = activeCount > 0
                   ? activeCount
-                  : (storedTotal > 0
-                      ? storedTotal
-                      : (updatedLevelCompletion[levelNumber]?['totalItems'] ??
-                          0) as int);
+                  : (updatedLevelCompletion[levelNumber]?['totalItems'] ?? 0)
+                      as int;
+              final int loadedTotalItems =
+                  _resolveStoredTotalItems(value, fallbackTotal);
+              final int score =
+                  _resolveNormalizedScore(value, loadedTotalItems);
 
               final date = value['date'];
 

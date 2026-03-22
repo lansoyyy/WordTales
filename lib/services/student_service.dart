@@ -6,6 +6,48 @@ class StudentService {
   // Collection references
   final String _studentsCollection = 'students';
 
+  Set<int> _extractCompletedItems(dynamic source) {
+    final Set<int> items = <int>{};
+    if (source is List) {
+      items.addAll(source.whereType<num>().map((e) => e.toInt()));
+    }
+    return items;
+  }
+
+  int _normalizeStoredScore(dynamic levelData) {
+    if (levelData is! Map) {
+      return 0;
+    }
+
+    final int rawScore =
+        levelData['score'] is num ? (levelData['score'] as num).toInt() : 0;
+    final int totalItems = levelData['totalItems'] is num
+        ? (levelData['totalItems'] as num).toInt()
+        : 0;
+
+    final Set<int> completedItems = <int>{};
+    final dynamic results = levelData['results'];
+    if (results is Map) {
+      completedItems.addAll(_extractCompletedItems(results['completedItems']));
+    }
+
+    final dynamic inProgress = levelData['inProgress'];
+    if (completedItems.isEmpty && inProgress is Map) {
+      completedItems
+          .addAll(_extractCompletedItems(inProgress['completedItems']));
+    }
+
+    int normalizedScore =
+        completedItems.isNotEmpty ? completedItems.length : rawScore;
+    if (normalizedScore < 0) {
+      normalizedScore = 0;
+    }
+    if (totalItems > 0 && normalizedScore > totalItems) {
+      normalizedScore = totalItems;
+    }
+    return normalizedScore;
+  }
+
   // Create a new student
   Future<String> createStudent({
     required String name,
@@ -23,35 +65,35 @@ class StudentService {
           '1': {
             'completed': false,
             'score': 0,
-            'totalItems': 5,
+            'totalItems': 0,
             'date': null,
             'audioRecordings': <String, String>{}
           },
           '2': {
             'completed': false,
             'score': 0,
-            'totalItems': 10,
+            'totalItems': 0,
             'date': null,
             'audioRecordings': <String, String>{}
           },
           '3': {
             'completed': false,
             'score': 0,
-            'totalItems': 15,
+            'totalItems': 0,
             'date': null,
             'audioRecordings': <String, String>{}
           },
           '4': {
             'completed': false,
             'score': 0,
-            'totalItems': 20,
+            'totalItems': 0,
             'date': null,
             'audioRecordings': <String, String>{}
           },
           '5': {
             'completed': false,
             'score': 0,
-            'totalItems': 20,
+            'totalItems': 0,
             'date': null,
             'audioRecordings': <String, String>{}
           },
@@ -362,7 +404,7 @@ class StudentService {
           final levelData = levelProgress['$level'];
           if (levelData['completed'] == true) {
             completedStudents++;
-            totalScore += (levelData['score'] ?? 0).toDouble();
+            totalScore += _normalizeStoredScore(levelData).toDouble();
           }
         }
       }

@@ -416,7 +416,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
         final levelData = levelProgress['$levelNumber'];
         if (levelData['completed'] == true) {
           completedStudents++;
-          totalScore += (levelData['score'] ?? 0).toDouble();
+          final int totalItems = _getDisplayTotalItems(
+            levelData['totalItems'],
+            _getExpectedTotalItemsForLevel(levelNumber),
+          );
+          totalScore += _getNormalizedScore(levelData, totalItems).toDouble();
         }
       }
     }
@@ -444,14 +448,51 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   }
 
   int _getDisplayTotalItems(dynamic storedTotalItems, int expectedTotalItems) {
-    // If we have the actual active item count from Firestore, always use it
-    // because it reflects the real number of items the student practices.
-    if (expectedTotalItems > 0) {
-      return expectedTotalItems;
-    }
     final int loaded =
         storedTotalItems is num ? storedTotalItems.toInt() : expectedTotalItems;
-    return loaded > 0 ? loaded : expectedTotalItems;
+    if (loaded > 0) {
+      return loaded;
+    }
+    return expectedTotalItems > 0 ? expectedTotalItems : 0;
+  }
+
+  Set<int> _extractCompletedItems(dynamic source) {
+    final Set<int> items = <int>{};
+    if (source is List) {
+      items.addAll(source.whereType<num>().map((e) => e.toInt()));
+    }
+    return items;
+  }
+
+  int _getNormalizedScore(dynamic levelData, int totalItems) {
+    if (levelData is! Map) {
+      return 0;
+    }
+
+    final int rawScore =
+        levelData['score'] is num ? (levelData['score'] as num).toInt() : 0;
+
+    final Set<int> completedItems = <int>{};
+    final dynamic results = levelData['results'];
+    if (results is Map) {
+      completedItems.addAll(_extractCompletedItems(results['completedItems']));
+    }
+
+    final dynamic inProgress = levelData['inProgress'];
+    if (completedItems.isEmpty && inProgress is Map) {
+      completedItems
+          .addAll(_extractCompletedItems(inProgress['completedItems']));
+    }
+
+    int normalizedScore =
+        completedItems.isNotEmpty ? completedItems.length : rawScore;
+    if (normalizedScore < 0) {
+      normalizedScore = 0;
+    }
+    if (totalItems > 0 && normalizedScore > totalItems) {
+      normalizedScore = totalItems;
+    }
+    return normalizedScore;
   }
 
   void exportProgress() {
@@ -476,6 +517,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
     final int displayTotalItems = _getDisplayTotalItems(
       levelData['totalItems'],
       expectedTotalItems,
+    );
+    final int normalizedScore = _getNormalizedScore(
+      levelData,
+      displayTotalItems,
     );
 
     // Extract spoken texts per item for per-word coloring on sentences
@@ -634,7 +679,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                             const SizedBox(height: 8.0),
                             TextWidget(
                               text:
-                                  'Score: ${levelData['score']}/$displayTotalItems',
+                                  'Score: $normalizedScore/$displayTotalItems',
                               fontSize: 16.0,
                               color: primary,
                               isBold: true,
@@ -1172,25 +1217,22 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
       final bool bCompleted =
           bLevelData != null && (bLevelData['completed'] == true);
 
+      final int aTotalItems = _getDisplayTotalItems(
+        aLevelData is Map ? aLevelData['totalItems'] : null,
+        expectedTotalItems,
+      );
+      final int bTotalItems = _getDisplayTotalItems(
+        bLevelData is Map ? bLevelData['totalItems'] : null,
+        expectedTotalItems,
+      );
+      final int aScore = _getNormalizedScore(aLevelData, aTotalItems);
+      final int bScore = _getNormalizedScore(bLevelData, bTotalItems);
+
       final double? aPercent = aCompleted
-          ? ((_getDisplayTotalItems(
-                      aLevelData['totalItems'], expectedTotalItems)) >
-                  0
-              ? (aLevelData['score'] ?? 0) *
-                  100.0 /
-                  (_getDisplayTotalItems(
-                      aLevelData['totalItems'], expectedTotalItems))
-              : null)
+          ? (aTotalItems > 0 ? aScore * 100.0 / aTotalItems : null)
           : null;
       final double? bPercent = bCompleted
-          ? ((_getDisplayTotalItems(
-                      bLevelData['totalItems'], expectedTotalItems)) >
-                  0
-              ? (bLevelData['score'] ?? 0) *
-                  100.0 /
-                  (_getDisplayTotalItems(
-                      bLevelData['totalItems'], expectedTotalItems))
-              : null)
+          ? (bTotalItems > 0 ? bScore * 100.0 / bTotalItems : null)
           : null;
 
       final int aBand = _getPerformanceBandOrder(aPercent, aCompleted);
@@ -1364,10 +1406,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                       levelData is Map ? levelData['totalItems'] : null,
                       expectedTotalItems,
                     );
+                    final int normalizedScore =
+                        _getNormalizedScore(levelData, displayTotalItems);
                     if (isCompleted && displayTotalItems > 0) {
-                      percentage =
-                          (levelData['score'] ?? 0) * 100.0 / displayTotalItems;
-                      performanceColor = _getPerformanceColor(percentage!);
+                      percentage = normalizedScore * 100.0 / displayTotalItems;
+                      performanceColor = _getPerformanceColor(percentage);
                     }
 
                     return Container(
@@ -1414,8 +1457,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                   const SizedBox(height: 4.0),
                                   TextWidget(
                                     text: percentage != null
-                                        ? 'Score: ${levelData['score']}/$displayTotalItems (${percentage.toStringAsFixed(0)}%) • ${levelData['date']}'
-                                        : 'Score: ${levelData['score']}/$displayTotalItems • ${levelData['date']}',
+                                        ? 'Score: $normalizedScore/$displayTotalItems (${percentage.toStringAsFixed(0)}%) • ${levelData['date']}'
+                                        : 'Score: $normalizedScore/$displayTotalItems • ${levelData['date']}',
                                     fontSize: 14.0,
                                     color: performanceColor ?? grey,
                                   ),
@@ -2094,11 +2137,29 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
                                                         levelData != null) ...[
                                                       const SizedBox(
                                                           height: 4.0),
-                                                      TextWidget(
-                                                        text:
-                                                            'Score: ${levelData['score']}/${_getExpectedTotalItemsForLevel(levelNumber)} • ${levelData['date'] ?? 'Unknown'}',
-                                                        fontSize: 14.0,
-                                                        color: grey,
+                                                      Builder(
+                                                        builder: (context) {
+                                                          final int
+                                                              displayTotalItems =
+                                                              _getDisplayTotalItems(
+                                                            levelData[
+                                                                'totalItems'],
+                                                            _getExpectedTotalItemsForLevel(
+                                                                levelNumber),
+                                                          );
+                                                          final int
+                                                              normalizedScore =
+                                                              _getNormalizedScore(
+                                                            levelData,
+                                                            displayTotalItems,
+                                                          );
+                                                          return TextWidget(
+                                                            text:
+                                                                'Score: $normalizedScore/$displayTotalItems • ${levelData['date'] ?? 'Unknown'}',
+                                                            fontSize: 14.0,
+                                                            color: grey,
+                                                          );
+                                                        },
                                                       ),
                                                     ],
                                                   ],
