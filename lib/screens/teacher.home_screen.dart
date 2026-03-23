@@ -434,9 +434,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   }
 
   int _getExpectedTotalItemsForLevel(int levelNumber) {
-    // Prefer the actual active item count fetched from Firestore
-    if (_activeItemCounts.containsKey(levelNumber) &&
-        _activeItemCounts[levelNumber]! > 0) {
+    // Prefer the actual active item count fetched from Firestore, even when
+    // that count is zero, so teacher-facing scores stay aligned with the
+    // currently active items instead of stale stored totals.
+    if (_activeItemCounts.containsKey(levelNumber)) {
       return _activeItemCounts[levelNumber]!;
     }
     // Fallback to hardcoded defaults only if active counts not loaded yet
@@ -448,6 +449,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen>
   }
 
   int _getDisplayTotalItems(dynamic storedTotalItems, int expectedTotalItems) {
+    if (_activeItemCounts.isNotEmpty) {
+      return expectedTotalItems >= 0 ? expectedTotalItems : 0;
+    }
+
     final int loaded =
         storedTotalItems is num ? storedTotalItems.toInt() : expectedTotalItems;
     if (loaded > 0) {
