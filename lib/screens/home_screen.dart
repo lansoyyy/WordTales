@@ -102,7 +102,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return items;
   }
 
-  int _resolveStoredTotalItems(Map<dynamic, dynamic> levelData, int fallback) {
+  int _resolveStoredTotalItems(
+    Map<dynamic, dynamic> levelData,
+    int fallback,
+    bool preferFallback,
+  ) {
+    if (preferFallback) {
+      return fallback >= 0 ? fallback : 0;
+    }
+
     final int storedTotal = levelData['totalItems'] is num
         ? (levelData['totalItems'] as num).toInt()
         : 0;
@@ -176,13 +184,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               if (value is! Map) return;
 
               final completed = value['completed'] == true;
+              final bool hasLiveActiveCount =
+                  _activeItemCounts.containsKey(levelNumber);
               final int activeCount = _activeItemCounts[levelNumber] ?? 0;
-              final int fallbackTotal = activeCount > 0
+              final int fallbackTotal = hasLiveActiveCount
                   ? activeCount
                   : (updatedLevelCompletion[levelNumber]?['totalItems'] ?? 0)
                       as int;
-              final int loadedTotalItems =
-                  _resolveStoredTotalItems(value, fallbackTotal);
+              final int loadedTotalItems = _resolveStoredTotalItems(
+                value,
+                fallbackTotal,
+                hasLiveActiveCount,
+              );
               final int score =
                   _resolveNormalizedScore(value, loadedTotalItems);
 

@@ -2112,11 +2112,13 @@ class _PracticeScreenState extends State<PracticeScreen>
       if (levelData == null) return;
 
       final bool completed = levelData['completed'] == true;
-      final int storedTotalRaw =
-          (levelData['totalItems'] ?? _totalItems) as int;
       final int actualTotal = practiceItems.length;
-      final int effectiveTotal =
-          storedTotalRaw > 0 ? storedTotalRaw : actualTotal;
+      final int storedTotalRaw = levelData['totalItems'] is num
+          ? (levelData['totalItems'] as num).toInt()
+          : _totalItems;
+      final int effectiveTotal = actualTotal > 0
+          ? actualTotal
+          : (storedTotalRaw > 0 ? storedTotalRaw : 0);
       final int storedScore = _getNormalizedStoredScore(
         levelData,
         effectiveTotal,
@@ -2142,12 +2144,18 @@ class _PracticeScreenState extends State<PracticeScreen>
               _currentIndex = idx;
             }
             if (completedItems is List) {
-              _completedItems =
-                  completedItems.map<int>((e) => (e as num).toInt()).toSet();
+              _completedItems = completedItems
+                  .whereType<num>()
+                  .map((e) => e.toInt())
+                  .where((index) => index >= 0 && index < practiceItems.length)
+                  .toSet();
             }
             if (failedItems is List) {
-              _failedItems =
-                  failedItems.map<int>((e) => (e as num).toInt()).toSet();
+              _failedItems = failedItems
+                  .whereType<num>()
+                  .map((e) => e.toInt())
+                  .where((index) => index >= 0 && index < practiceItems.length)
+                  .toSet();
             }
             _incorrectAttempts =
                 incorrectAttempts is int ? incorrectAttempts : 0;
@@ -2185,16 +2193,22 @@ class _PracticeScreenState extends State<PracticeScreen>
             _isReviewMode = true;
 
             if (completedItems is List) {
-              _completedItems =
-                  completedItems.map<int>((e) => (e as num).toInt()).toSet();
+              _completedItems = completedItems
+                  .whereType<num>()
+                  .map((e) => e.toInt())
+                  .where((index) => index >= 0 && index < practiceItems.length)
+                  .toSet();
             } else {
               _completedItems =
                   Set<int>.from(List.generate(practiceItems.length, (i) => i));
             }
 
             if (failedItems is List) {
-              _failedItems =
-                  failedItems.map<int>((e) => (e as num).toInt()).toSet();
+              _failedItems = failedItems
+                  .whereType<num>()
+                  .map((e) => e.toInt())
+                  .where((index) => index >= 0 && index < practiceItems.length)
+                  .toSet();
             }
             // Restore spoken texts map
             if (spokenTexts is Map) {
